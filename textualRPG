@@ -1,0 +1,59 @@
+from typing import Coroutine
+from textual.app import App, ComposeResult
+from textual.containers import Container, Horizontal, VerticalScroll
+from textual.message import Message
+from textual.widgets import Header, Footer, Static, Label
+from textual.reactive import reactive
+import voicefunc as vf
+
+class Battlefield(Horizontal):
+    
+    def compose(self):
+        yield Static("Here is battlefield", id="bfintro")
+
+class Line(Label):
+    pass
+
+class Dialog(VerticalScroll):
+
+    def compose(self):
+        yield Line("Here is Dialog")
+
+    def on_key(self):
+        for chr in voice.speakgen("text!", "----."):
+            self.mount(Line(chr))
+
+class MainApp(App):
+
+    BINDINGS = [("d", "toggle_dark", "Toggle dark mode"),
+                ("q", "exit", "Quit")]
+    
+    CSS = """
+    Battlefield{
+        border: white;
+    }
+
+    Dialog{
+        border: white;
+    }
+    """
+    
+    def compose(self):
+        yield Header()
+        yield Footer()
+        yield Horizontal(
+            Battlefield(),
+            Dialog()
+        )
+
+    def action_toggle_dark(self) -> None:
+        """An action to toggle dark mode."""
+        self.dark = not self.dark
+
+    def action_exit(self):
+        self.exit()
+
+if __name__ == "__main__":
+    app = MainApp()
+    voice = vf.voice()
+    app.run()
