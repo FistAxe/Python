@@ -1,4 +1,3 @@
-import sys
 import voicefunc
 import RichUI
 from rich.live import Live
