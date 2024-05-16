@@ -39,24 +39,44 @@ class Dialog:
 if __name__ == "__main__":
     main = Main()
 
-    with Live(RichUI.layoutgen(main.ui), auto_refresh=False) as live:
-        live.update(RichUI.layoutgen(main.ui), refresh=True)
+    #Makes Layout() from present main.ui
+    def layoutgen():
+        return main.ui.layoutgen()
+
+    with Live(layoutgen(), auto_refresh=False) as live:
+        #Live(Layout()), arg) as live:
+        #    ...
+        #    updateUI()
+        #    ...
+        #    updateUI()
+        #처럼 동작.
+        
+        def updateUI():
+            live.update(layoutgen(), refresh=True)
+        
+        updateUI()
+        print("initialted")
          #screen init
 
         input_counter = 0
         while True:
-            user_input = input("adf")
+            user_input = input("Press your input")
             
             if user_input == 'q':
                 break
+            
+            #return_event with function
             elif user_input == 'i':
-                RichUI.dwrite(main.ui, f"nvoierhaoivhgoiewjhaoivghoiheiowhoivhoiwjovig\n")
+                main.ui.dwrite(f"nvoierhaoivhgoiewjhaoivghoiheiowhoivhoiwjovig\n")
+            
+            #yield_event with generator
             elif user_input == 'v':
                 for char in (main.player.voice.speakgen("뭐라카노?", "_-^-.")):
-                    RichUI.dwrite(main.ui, char)
-                    live.update(RichUI.layoutgen(main.ui), refresh=True) #refreshes with changed main.console.
+                    main.ui.dwrite(char)
+                    updateUI() #refreshes with changed main.console.
 
+            #after event, refreshes with debugging print
             if user_input != None:
                 input_counter += 1
-                RichUI.dwrite(main.ui, f"{input_counter} updated\n")
-                live.update(RichUI.layoutgen(main.ui), refresh=True) #refreshes with changed main.console.
+                main.ui.dwrite(f"{input_counter} updated\n")
+                updateUI() #refreshes with changed main.console.
