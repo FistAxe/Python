@@ -41,7 +41,7 @@ class Main:
         self.update_bf_table()
 
     def update_bf_table(self):
-        bf_table.row = len(self.players) + len(self.enemys)
+        self.bf_table.row = len(self.players) + len(self.enemys)
 
 class Dialog:
     #아직 안 씀
