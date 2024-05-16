@@ -1,24 +1,24 @@
 from rich import print
 from rich.layout import Layout
-from rich.console import Console
-layout = Layout(name="abc")
-console = Console()
-small_layout = Layout()
-small_layout.split_row(
-    Layout(),
-    Layout()
-)
+
+layout = Layout()
 
 layout.split_row(
-    Layout(),
-    Layout(name="middle"),
-    Layout()
-)
-layout["middle"].split_column(
-    Layout(),
-    Layout()
+    Layout(name="left"),
+    Layout(name="right")
 )
 
-for lay in layout["middle"].children:
-    lay.update("Wow!")
-console.print(layout)
+layout["left"].split_column(
+    Layout(name="up"),
+    Layout(name="down")
+)
+layout["up"].split_row(
+    Layout(name="leftleft"),
+    Layout(name="rightright")
+)
+
+layout["right"].update("right")
+layout["up"].update("up")
+layout["leftleft"].update("leftleft")
+
+print(layout)

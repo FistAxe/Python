@@ -16,24 +16,27 @@ class Main:
         self.ui = RichUI.console
         self.data = Data()
 
-        self.add_creature("test player", "@", type='character')
+        self.add_creature("test player", "@", typ='character')
         self.testplayer = self.data.players[0]
 
 
-    def add_creature(self, name:str, icon:str, voice: dict|None = None, type:Literal["character", "monster"]="character"):
+    def add_creature(self, name:str, icon:str, voice: dict|None = None, typ:Literal["character", "monster"]="character"):
         #아군 추가
-        if type == "character":
+        if typ == "character":
             new_creature = character(name, icon)
             if voice == dict:
+
                 new_creature.setVoice(**voice)
             else:
                 new_creature.setVoice()
             self.data.players.append(new_creature)
+            self.data.initcreature('character')
         
         #적군 추가
-        elif type == "monster":
+        elif typ == "monster":
             new_creature = monster(name, icon)
             self.data.monsters.append(new_creature)
+            self.data.initcreature('monster')
 
 #class Dialog:
 #    #아직 안 씀
@@ -83,12 +86,13 @@ if __name__ == "__main__":
                     updateUI() #refreshes with changed main.console.
 
             elif user_input == 'a':
-                main.add_creature(f"player {len(main.data.players) + 1}", "A", type='character')
+                main.add_creature(f"player {len(main.data.players) + 1}", "A", typ='character')
                 main.ui.dwrite(f"Character {main.data.players[-1].name} was added.\n")
 
             elif user_input == 'm':
-                main.add_creature(f"monster {len(main.data.monsters) + 1}", "M", type='monster')
+                main.add_creature(f"monster {len(main.data.monsters) + 1}", "M", typ='monster')
                 main.ui.dwrite(f"Monster {main.data.monsters[-1].name} was added.\n")
+
 
             #after event, refreshes with debugging print
             if user_input != None:

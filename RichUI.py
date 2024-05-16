@@ -1,6 +1,7 @@
 from rich.console import Console
 from rich.layout import Layout
 from rich.panel import Panel
+from rich.align import Align
 from RPGclass import Data, monster
 from typing import List
 
@@ -19,26 +20,26 @@ class Battlefield(Box):
 
     def monsterlayoutgen(self, monsters:List[monster]):
         for i in range(len(monsters)):
-            daughterlayout = Layout(name=f"monster {i}")
+            daughterlayout = Layout(name=f"monster {i + 1}")
             yield daughterlayout
 
     def __init__(self, data:Data=None):
         #data 제대로 들어옴
-        print(type(data))
         if isinstance(data, Data):
             table = Layout()
 
             table.split_row(
                 Layout(name="playerside"),
-                Layout(name="middle"),
+                Layout(Align("vs", align="center", vertical="middle"), name="middle"),
                 Layout(name="monsterside")
             )
+            table["middle"].size = 2
 
             table["playerside"].split_row(
-                Layout(name="Player 4"),
-                Layout(name="Player 3"),
-                Layout(name="Player 2"),
-                Layout(name="Player 1"),
+                Layout(name="player 4"),
+                Layout(name="player 3"),
+                Layout(name="player 2"),
+                Layout(name="player 1"),
             )
             
             monsterlist = list(self.monsterlayoutgen(data.monsters))
@@ -47,19 +48,25 @@ class Battlefield(Box):
             for playerlayout in table["playerside"].children:
                 playerlayout.split_column(
                     Layout(name=f"{playerlayout.name}_event"),
-                    Layout(name=f"{playerlayout.name}_field"),
-                    Layout(name=f"{playerlayout.name}_namespace")
-                )
+                    Layout(name=f"{playerlayout.name}_field", size=3),
+                    Layout(name=f"{playerlayout.name}_namespace", size=3)
+                    )
+                print(f"{playerlayout.name}_event")
             
             for monsterlayout in table["monsterside"].children:
                 monsterlayout.split_column(
                     Layout(name=f"{monsterlayout.name}_event"),
-                    Layout(name=f"{monsterlayout.name}_field"),
-                    Layout(name=f"{monsterlayout.name}_namespace")
+                    Layout(name=f"{monsterlayout.name}_field", size=3),
+                    Layout(name=f"{monsterlayout.name}_namespace",size=3)
                 )
             
+            for player in data.players:
+                table[f"{player.id}_field"].update(Panel(player.icon))
+                table[f"{player.id}_namespace"].update(player.name)
             
-            
+            for monster in data.monsters:
+                table[f"{monster.id}_field"].update(Panel(monster.icon))
+                table[f"{monster.id}_namespace"].update(monster.name)
             
             #attrlist = list(self.layoutgen("attr", Data.event_num))
             character_info = Panel("Data")
@@ -73,9 +80,11 @@ class Battlefield(Box):
         
         insidegrid = Layout()
         insidegrid.split_column(
-            Layout(table),
-            Layout(character_info)
+            Layout(table, name="table"),
+            Layout(character_info, name="info")
         )
+
+        insidegrid["info"].size = 6
 
         super().__init__(insidegrid, name="Battlefield")
 
@@ -124,7 +133,7 @@ class UI(Console):
             )
 
         self.layout["right"].size = 50
-        self.layout["up"].ratio = 6
+        self.layout["down"].size = 4
         return self.layout
 
     def dwrite(self, text:str):
