@@ -1,9 +1,8 @@
-from rich import print
 from rich.console import Console
 from rich.layout import Layout
 from rich.panel import Panel
-from rich.live import Live
-from rich.table import Table
+from RPGclass import Data, monster
+from typing import List
 
 class Box(Panel):
     def __init__(self, update="Box called without its renderable", name:str="Box"):
@@ -12,10 +11,65 @@ class Box(Panel):
 class Battlefield(Box):
     #Panel(get_battlefield())
     
-    
-    def __init__(self, update:Layout | str = "BF called without its renderable"):
-        table = Table("with table data in main")
-        character_info = Panel("with info data in main")
+    event : Layout
+    field : Panel
+    namespace : Panel
+
+    playerlist : list
+
+    def monsterlayoutgen(self, monsters:List[monster]):
+        for i in range(len(monsters)):
+            daughterlayout = Layout(name=f"monster {i}")
+            yield daughterlayout
+
+    def __init__(self, data:Data=None):
+        #data 제대로 들어옴
+        print(type(data))
+        if isinstance(data, Data):
+            table = Layout()
+
+            table.split_row(
+                Layout(name="playerside"),
+                Layout(name="middle"),
+                Layout(name="monsterside")
+            )
+
+            table["playerside"].split_row(
+                Layout(name="Player 4"),
+                Layout(name="Player 3"),
+                Layout(name="Player 2"),
+                Layout(name="Player 1"),
+            )
+            
+            monsterlist = list(self.monsterlayoutgen(data.monsters))
+            table["monsterside"].split_row(*monsterlist)
+
+            for playerlayout in table["playerside"].children:
+                playerlayout.split_column(
+                    Layout(name=f"{playerlayout.name}_event"),
+                    Layout(name=f"{playerlayout.name}_field"),
+                    Layout(name=f"{playerlayout.name}_namespace")
+                )
+            
+            for monsterlayout in table["monsterside"].children:
+                monsterlayout.split_column(
+                    Layout(name=f"{monsterlayout.name}_event"),
+                    Layout(name=f"{monsterlayout.name}_field"),
+                    Layout(name=f"{monsterlayout.name}_namespace")
+                )
+            
+            
+            
+            
+            #attrlist = list(self.layoutgen("attr", Data.event_num))
+            character_info = Panel("Data")
+
+        elif Data == None:
+            table = Panel("No Data input")
+            character_info = Panel("No Data input")
+        else:
+            table = Panel("No Data")
+            character_info = Panel("No Data")
         
         insidegrid = Layout()
         insidegrid.split_column(
@@ -78,6 +132,9 @@ class UI(Console):
         #ui.dialog까지만 업데이트. 나머지는 layoutgen이 처리.
         self.dialog.wholetext += text
         self.dialog = Dialog(self.dialog.wholetext)
+
+    def twrite(self, data):
+        self.battlefield = Battlefield(data)
 
 def parse(text:str, width, height):
     #1. 추가된 text에 \n 추가해서 width 맞추기
