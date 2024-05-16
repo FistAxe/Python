@@ -27,6 +27,9 @@ class voice:
         self.bop.set_volume(0.6)
         self.bup.set_volume(0.6)
     
+    #line의 음절이 하나씩 들어 있는 generator이다. 글자 하나를 반환한다.
+    #for 글자 in speakgen:
+    #   뭔가 해라(글자)
     def speakgen(self, line:str, accent:str):
         if len(line) != len(accent):
             raise ValueError("linenum != accent!")
@@ -50,14 +53,13 @@ class voice:
             elif accent == '^':
                 self.bip.play()
 
-def speak(voice:voice, text:str, accent:str):
-    for chr in voice.speakgen(text, accent):
-        print(chr, end='')
 
-def voiceFuncTest():
-    samplevoice = voice()
-    speak(samplevoice, "뭐라카노?", "_-^-.")
-    speak(samplevoice, "니 내 누군지 아나?", "-.-.^^- _- ")
+#예시. 아래처럼 외부에서 voice 인스턴스를 생성해 speakgen을 반복해서 불러올 것.
+def voiceFuncTest(voice:voice):
+    for chr in voice.speakgen("뭐라카노?", "_-^-."):
+        print(chr, end='')
     
 if __name__ == "__main__":
-    voiceFuncTest()
+    samplevoice = voice()
+    voiceFuncTest(samplevoice, "뭐라카노?", "_-^-.")
+    voiceFuncTest(samplevoice, "니 내 누군지 아나?", "-.-.^^- _- ")
