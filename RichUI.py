@@ -3,14 +3,27 @@ from rich.console import Console
 from rich.layout import Layout
 from rich.panel import Panel
 from rich.live import Live
+from rich.table import Table
 
 class Box(Panel):
     def __init__(self, update="Box called without its renderable", name:str="Box"):
         super().__init__(update, title=name, title_align="left")
 
 class Battlefield(Box):
-    def __init__(self, update="BF called without its renderable"):
-        super().__init__(update, name="Battlefield")
+    #Panel(get_battlefield())
+    
+    
+    def __init__(self, update:Layout | str = "BF called without its renderable"):
+        table = Table("with table data in main")
+        character_info = Panel("with info data in main")
+        
+        insidegrid = Layout()
+        insidegrid.split_column(
+            Layout(table),
+            Layout(character_info)
+        )
+
+        super().__init__(insidegrid, name="Battlefield")
 
 class Dialog(Box):
 
@@ -80,6 +93,7 @@ def parse(text:str, width, height):
     parsedtext = '\n'.join(buf)
     return parsedtext
 
+"""
 def layoutgen(ui:UI):
     #Live에서 호출됨. Live(renderable()) 같은 식으로.
     ui.layout = Layout()
@@ -95,5 +109,6 @@ def layoutgen(ui:UI):
     ui.layout["right"].size = 50
     ui.layout["up"].ratio = 6
     return ui.layout
+"""
 
 console : UI = UI()

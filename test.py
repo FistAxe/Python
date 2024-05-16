@@ -1,12 +1,13 @@
-import os
-import sys
-
 from rich import print
-from rich.columns import Columns
+from rich.layout import Layout
+from rich.panel import Panel
+from rich.console import group
 
-if len(sys.argv) < 2:
-    print("Usage: python columns.py DIRECTORY")
-else:
-    directory = os.listdir(sys.argv[1])
-    columns = Columns(directory, equal=True, expand=True)
-    print(columns)
+@group()
+def get_panels():
+    yield Panel("Hello", style="on blue")
+    yield Panel("World", style="on red")
+
+layout = Layout(get_panels())
+
+print(layout)
