@@ -1,6 +1,7 @@
 import time
 import numpy as np
 import pygame
+from typing import TypedDict
 
 SEC = 0.11
 
@@ -16,6 +17,19 @@ def generateBeep(frequency, duration = 0.11):
 bip = generateBeep(740, SEC)
 bop = generateBeep(455, SEC)
 bup = generateBeep(350, SEC)
+
+class VOICESET(TypedDict):
+    high: int
+    middle: int
+    low: int
+    sec: float
+
+defalt_voiceset : VOICESET = {
+    'high': 740,
+    'middle': 455,
+    'low': 350,
+    'sec': 0.11
+}
 
 class voice:
     def __init__(self, high=740, middle=455, low=350, sec=0.11):
@@ -60,6 +74,6 @@ def voiceFuncTest(voice:voice):
         print(chr, end='')
     
 if __name__ == "__main__":
-    samplevoice = voice()
+    samplevoice = voice(**defalt_voiceset)
     voiceFuncTest(samplevoice, "뭐라카노?", "_-^-.")
     voiceFuncTest(samplevoice, "니 내 누군지 아나?", "-.-.^^- _- ")
