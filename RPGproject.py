@@ -1,5 +1,5 @@
 import RichUI
-from RPGclass import character, monster, Data, event
+from RPGclass import Character, Monster, Data, Event
 from rich.live import Live
 from typing import Literal
 
@@ -8,7 +8,7 @@ HEIGHT = 30
 
 class Main:
     #추상적 클래스 선언. console, data 불러오기.
-    testplayer : character
+    testplayer : Character
     ui : RichUI.UI
     data : Data
         
@@ -25,7 +25,7 @@ class Main:
     #아군 추가
     def add_player(self, name:str, icon:str, voice:dict|Literal["silent"]|None = None):
         #생성
-        new_creature = character(name, icon)
+        new_creature = Character(name, icon)
         #목소리 설정
         if voice == dict:
             new_creature.setVoice(**voice)
@@ -41,18 +41,41 @@ class Main:
     #적군 추가
     def add_monster(self, name:str, icon:str):
         #생성
-        new_creature = monster(name, icon)
+        new_creature = Monster(name, icon)
         #index 설정
         new_creature.index = len(self.data.monsters) + 1
         #추가
         self.data.monsters.append(new_creature)
 
-    #아군 삭제
-    def delete_player(self, index_in_players:int):
+    #아군 삭제. 가장 왼쪽이 기본값.
+    def delete_player(self, index_in_players:int= -1):
         try:
             self.data.players.pop(index_in_players)
         except IndexError:
-            main.ui.dwrite("no such player index in players\n")
+            self.ui.dwrite("no such player index in players\n")
+
+    #적군 삭제. 가장 오른쪽이 기본값.
+    def kill_monster(self, index_in_monsters:int= -1):
+        try:
+            self.data.monsters.pop(index_in_monsters)
+        except IndexError:
+            self.ui.dwrite("no such monster index in monsters\n")
+
+    #이벤트 추가. 기본적으로 맨 뒤에, index가 주어지면 eventList[index]에 추가.
+    def add_event(self, typ:str="test", index:int | None = None):
+        new_event = Event()
+        if index == None:
+            self.data.eventList.append(new_event)
+        else:
+            self.data.eventList.insert(index, new_event)
+        self.data.eventIndexRefresh()
+
+    #이벤트 삭제. 기본적으로 맨 아래.
+    def clear_event(self, index:int= -1):
+        try:
+            self.data.eventList.pop(index)
+        except IndexError:
+            self.ui.dwrite("No such event index in eventList\n")
 
 if __name__ == "__main__":
     main = Main()
@@ -102,7 +125,7 @@ if __name__ == "__main__":
 
             #(M)onster add
             elif user_input == 'm':
-                #monster를 data에 추가한다.
+                #Monster를 data에 추가한다.
                 main.add_monster(f"monster {len(main.data.monsters) + 1}", "M")
                 #dialog를 갱신한다.
                 main.ui.dwrite(f"Monster \'{main.data.monsters[-1].name}\' was added.\n")
@@ -114,6 +137,28 @@ if __name__ == "__main__":
                     main.delete_player(len(main.data.players) - 1)
                 except IndexError:
                     main.ui.dwrite("No more players to delete!\n")
+
+            #(K)ill monster
+            elif user_input == 'k':
+                try:
+                    main.ui.dwrite(f"monster \'{main.data.monsters[-1].name}\' was deleted.\n")
+                    main.kill_monster(len(main.data.monsters) - 1)
+                except IndexError:
+                    main.ui.dwrite("No more monsters to delete!\n")
+
+            #(E)vent add
+            elif user_input == 'e':
+                main.add_event(typ="test")
+                main.ui.dwrite(f"event \'test\' added\n")
+
+            #(C)lear event
+            elif user_input == 'c':
+                try:
+                    main.ui.dwrite("trying to clear last event...\n")
+                    main.clear_event()
+                except IndexError:
+                    main.ui.dwrite("no such event!\n")
+
 
             elif not user_input.isascii():
                 main.ui.dwrite("Not ASCII! (한/영 키 확인)\n")

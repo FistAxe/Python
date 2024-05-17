@@ -1,18 +1,18 @@
 import voicefunc
 from typing import Literal
 
-class creature:
+class Creature:
     def __init__(self, name:str, icon:str):
         self.name = name
         self.icon = icon
 
-class monster(creature):
+class Monster(Creature):
     index : int
 
     def __init__(self, name:str, icon:str):
         super().__init__(name, icon)
 
-class character(creature):
+class Character(Creature):
     index : Literal[0, 1, 2, 3, 4]
 
     def __init__(self, name:str, icon:str):
@@ -22,18 +22,22 @@ class character(creature):
     def setVoice(self, high=740, middle=455, low=350, sec=0.13):
         self.voice = voicefunc.voice(high, middle, low, sec)
 
-class event:
-    pass
+class Event:
+    index : int
+
+
 
 class Data:
-    monsters : list[monster] = []
-    players : list[character] = []
-    eventList : list[event] = []
+    monsters : list[Monster] = []
+    players : list[Character] = []
+    eventList : list[Event] = []
     
     def __init__(self):
-        pass
+        event = Event()
+        self.eventList.append(event)
+        self.eventIndexRefresh()
     
-    #event의 수
+    #Event의 수
     def event_num(self):
         return len(self.eventList)
     
@@ -55,3 +59,9 @@ class Data:
             return indexlist.pop(0)
         except IndexError:
             return 0
+        
+    def eventIndexRefresh(self):
+        counter = 0
+        for event in self.eventList:
+            counter += 1
+            event.index = counter

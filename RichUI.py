@@ -3,8 +3,8 @@ from rich.layout import Layout
 from rich.panel import Panel
 from rich.align import Align
 from rich import box
-from RPGclass import Data, monster
-from typing import List
+from RPGclass import Data, Monster, Event
+from typing import List, Literal
 
 class Box(Panel):
     def __init__(self, update="Box called without its renderable", name:str="Box"):
@@ -19,9 +19,14 @@ class Battlefield(Box):
 
     playerlist : list
 
-    def monsterlayoutgen(self, monsters:List[monster]):
+    def monsterlayoutgen(self, monsters:List[Monster]):
         for i in range(len(monsters)):
             daughterlayout = Layout(name=f"monster {i + 1}")
+            yield daughterlayout
+
+    def eventlayoutgen(self, name_and_index:str, eventList:List[Event]):
+        for event in eventList:
+            daughterlayout = Layout(name=f"{name_and_index}_event_{event.index}")
             yield daughterlayout
 
     def __init__(self, data:Data=None):
@@ -51,7 +56,7 @@ class Battlefield(Box):
             monsterlist = list(self.monsterlayoutgen(data.monsters))
             table["monsterside"].split_row(*monsterlist)
 
-            #각 creature마다 event 칸, field 칸, namespace 칸을 가진다.
+            #각 Creature마다 event 칸, field 칸, namespace 칸을 가진다.
             for playerlayout in table["playerside"].children:
                 playerlayout.split_column(
                     Layout(name=f"{playerlayout.name}_event"),
@@ -65,7 +70,7 @@ class Battlefield(Box):
                     Layout(name=f"{monsterlayout.name}_field", size=3),
                     Layout(name=f"{monsterlayout.name}_namespace",size=3)
                 )
-            
+
             #player의 세부 사항 지정.
             playerindexlist = [1, 2, 3, 4]
             for player in data.players:
@@ -74,6 +79,9 @@ class Battlefield(Box):
                         Panel(Align(f"{player.icon}", align="center"), box=box.HEAVY)
                         )
                     table[f"player {player.index}_namespace"].update(player.name)
+                    table[f"player {player.index}_event"].split_column(
+                        *list(self.eventlayoutgen(f"player {player.index}", data.eventList))
+                    )
                     playerindexlist.remove(player.index)
 
             for blank in playerindexlist:
@@ -81,14 +89,18 @@ class Battlefield(Box):
                 table[f"player {blank}_namespace"].update("No player")
                 table[f"player {blank}_event"].update(" ")
             
-            #monster의 세부 사항 지정.
+            #Monster의 세부 사항 지정.
             for monster in data.monsters:
                 table[f"monster {monster.index}_field"].update(
                     Panel(Align(f"{monster.icon}", align="center"), box=box.HEAVY)
                     )
                 table[f"monster {monster.index}_namespace"].update(monster.name)
+                table[f"monster {monster.index}_event"].split_column(
+                    *list(self.eventlayoutgen(f"monster {monster.index}", data.eventList))
+                )
+
+
             
-            #attrlist = list(self.layoutgen("attr", Data.event_num))
             character_info = Panel("Data")
 
         elif Data == None:
