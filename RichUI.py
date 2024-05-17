@@ -2,6 +2,7 @@ from rich.console import Console
 from rich.layout import Layout
 from rich.panel import Panel
 from rich.align import Align
+from rich import box
 from RPGclass import Data, monster
 from typing import List
 
@@ -29,12 +30,16 @@ class Battlefield(Box):
             table = Layout()
 
             table.split_row(
+                #왼쪽, players
                 Layout(name="playerside"),
+                #중간, "vs"
                 Layout(Align("vs", align="center", vertical="middle"), name="middle"),
+                #오른쪽, monsters
                 Layout(name="monsterside")
             )
             table["middle"].size = 2
 
+            #player는 총 4명.
             table["playerside"].split_row(
                 Layout(name="player 4"),
                 Layout(name="player 3"),
@@ -42,16 +47,17 @@ class Battlefield(Box):
                 Layout(name="player 1"),
             )
             
+            #data의 monster 수만큼 monsterlayout 생성.
             monsterlist = list(self.monsterlayoutgen(data.monsters))
             table["monsterside"].split_row(*monsterlist)
 
+            #각 creature마다 event 칸, field 칸, namespace 칸을 가진다.
             for playerlayout in table["playerside"].children:
                 playerlayout.split_column(
                     Layout(name=f"{playerlayout.name}_event"),
                     Layout(name=f"{playerlayout.name}_field", size=3),
                     Layout(name=f"{playerlayout.name}_namespace", size=3)
                     )
-                print(f"{playerlayout.name}_event")
             
             for monsterlayout in table["monsterside"].children:
                 monsterlayout.split_column(
@@ -60,13 +66,27 @@ class Battlefield(Box):
                     Layout(name=f"{monsterlayout.name}_namespace",size=3)
                 )
             
+            #player의 세부 사항 지정.
+            playerindexlist = [1, 2, 3, 4]
             for player in data.players:
-                table[f"{player.id}_field"].update(Panel(player.icon))
-                table[f"{player.id}_namespace"].update(player.name)
+                if player.index in playerindexlist:
+                    table[f"player {player.index}_field"].update(
+                        Panel(Align(f"{player.icon}", align="center"), box=box.HEAVY)
+                        )
+                    table[f"player {player.index}_namespace"].update(player.name)
+                    playerindexlist.remove(player.index)
+
+            for blank in playerindexlist:
+                table[f"player {blank}_field"].update(" ")
+                table[f"player {blank}_namespace"].update("No player")
+                table[f"player {blank}_event"].update(" ")
             
+            #monster의 세부 사항 지정.
             for monster in data.monsters:
-                table[f"{monster.id}_field"].update(Panel(monster.icon))
-                table[f"{monster.id}_namespace"].update(monster.name)
+                table[f"monster {monster.index}_field"].update(
+                    Panel(Align(f"{monster.icon}", align="center"), box=box.HEAVY)
+                    )
+                table[f"monster {monster.index}_namespace"].update(monster.name)
             
             #attrlist = list(self.layoutgen("attr", Data.event_num))
             character_info = Panel("Data")
@@ -110,7 +130,7 @@ class CommandBox(Box):
 
 class UI(Console):
 
-    dialog : Dialog #is Panel with methods
+    dialog : Dialog
     battlefield : Battlefield
     commandbox : CommandBox
     layout : Layout
@@ -120,8 +140,8 @@ class UI(Console):
         self.battlefield = Battlefield("__init__")
         self.commandbox = CommandBox("__init__")
 
+    #Live에서 호출할 layout을 생성한다. Live( Layout() ) 같은 식으로.
     def layoutgen(self):
-    #Live에서 호출됨. Live(renderable()) 같은 식으로.
         self.layout = Layout()
         self.layout.split_row(
             Layout(name="left"),
@@ -136,15 +156,22 @@ class UI(Console):
         self.layout["down"].size = 4
         return self.layout
 
+    #ui.dialog를 재생성한다.
     def dwrite(self, text:str):
         #ui.dialog 자체를 재정의하므로, ui.dialog 밖에서 정의된다.
         #ui.dialog까지만 업데이트. 나머지는 layoutgen이 처리.
         self.dialog.wholetext += text
         self.dialog = Dialog(self.dialog.wholetext)
 
-    def twrite(self, data):
+    #ui.battlefield를 재생성한다.
+    def bwrite(self, data):
         self.battlefield = Battlefield(data)
 
+    #ui.commandbox를 재생성한다.
+    def cwrite(self, commandtext:str):
+        self.commandbox = CommandBox(commandtext)
+
+#너비, 높이만 주어지면 어디든 쓸 수 있는 텍스트 조정 함수
 def parse(text:str, width, height):
     #1. 추가된 text에 \n 추가해서 width 맞추기
     buf = text.split('\n')
@@ -158,23 +185,5 @@ def parse(text:str, width, height):
         buf.pop(0)
     parsedtext = '\n'.join(buf)
     return parsedtext
-
-"""
-def layoutgen(ui:UI):
-    #Live에서 호출됨. Live(renderable()) 같은 식으로.
-    ui.layout = Layout()
-    ui.layout.split_row(
-        Layout(name="left"),
-        Layout(ui.dialog, name="right")
-        )
-    ui.layout["left"].split_column(
-        Layout(ui.battlefield, name="up"),
-        Layout(ui.commandbox, name="down"),
-        )
-
-    ui.layout["right"].size = 50
-    ui.layout["up"].ratio = 6
-    return ui.layout
-"""
 
 console : UI = UI()

@@ -1,5 +1,5 @@
 import RichUI
-from RPGclass import character, monster, Data
+from RPGclass import character, monster, Data, event
 from rich.live import Live
 from typing import Literal
 
@@ -16,35 +16,43 @@ class Main:
         self.ui = RichUI.console
         self.data = Data()
 
-        self.add_creature("test player", "@", typ='character')
+        #처음에 player 하나를 추가한다. 디버그용.
+        self.add_player("test player", "@")
+
+        #character instance 하나를 Main.testplayer에 저장한다. 디버그용.
         self.testplayer = self.data.players[0]
 
+    #아군 추가
+    def add_player(self, name:str, icon:str, voice:dict|Literal["silent"]|None = None):
+        #생성
+        new_creature = character(name, icon)
+        #목소리 설정
+        if voice == dict:
+            new_creature.setVoice(**voice)
+        elif voice == "silent":
+            pass
+        else:
+            new_creature.setVoice()
+        #index 설정
+        new_creature.index = self.data.playerIndexCheck()
+        #추가
+        self.data.players.append(new_creature)
+    
+    #적군 추가
+    def add_monster(self, name:str, icon:str):
+        #생성
+        new_creature = monster(name, icon)
+        #index 설정
+        new_creature.index = len(self.data.monsters) + 1
+        #추가
+        self.data.monsters.append(new_creature)
 
-    def add_creature(self, name:str, icon:str, voice: dict|None = None, typ:Literal["character", "monster"]="character"):
-        #아군 추가
-        if typ == "character":
-            new_creature = character(name, icon)
-            if voice == dict:
-
-                new_creature.setVoice(**voice)
-            else:
-                new_creature.setVoice()
-            self.data.players.append(new_creature)
-            self.data.initcreature('character')
-        
-        #적군 추가
-        elif typ == "monster":
-            new_creature = monster(name, icon)
-            self.data.monsters.append(new_creature)
-            self.data.initcreature('monster')
-
-#class Dialog:
-#    #아직 안 씀
-#   def initwrite(self):
-#        self.narrator = character()
-#        self.narrator.setVoice()
-#        return self.narrator.voice.speakgen("player set",
-#                                            "------.---")
+    #아군 삭제
+    def delete_player(self, index_in_players:int):
+        try:
+            self.data.players.pop(index_in_players)
+        except IndexError:
+            main.ui.dwrite("no such player index in players\n")
 
 if __name__ == "__main__":
     main = Main()
@@ -64,7 +72,6 @@ if __name__ == "__main__":
         #앞으로 화면 갱신 시 이걸 쓸 거임.
         def updateUI():
             live.update(layoutgen(), refresh=True)
-        
         #이렇게.
         updateUI()
 
@@ -75,28 +82,50 @@ if __name__ == "__main__":
             if user_input == 'q':
                 break
             
-            #return_event with function
+            #(I)nput
             elif user_input == 'i':
                 main.ui.dwrite(f"nvoierhaoivhgoiewjhaoivghoiheiowhoivhoi하다니wjovig\n")
             
-            #yield_event with generator
+            #(V)oice
             elif user_input == 'v':
                 for char in (main.testplayer.voice.speakgen("뭐라카노?", "_-^-.")):
                     main.ui.dwrite(char)
-                    updateUI() #refreshes with changed main.console.
+                    #현재 dialog 내용으로 새 layout을 출력한다.
+                    updateUI()
 
-            elif user_input == 'a':
-                main.add_creature(f"player {len(main.data.players) + 1}", "A", typ='character')
-                main.ui.dwrite(f"Character {main.data.players[-1].name} was added.\n")
+            #(P)layer add
+            elif user_input == 'p':
+                #player를 data에 추가한다.
+                main.add_player(f"player {len(main.data.players) + 1}", "A")
+                #dialog를 갱신한다.
+                main.ui.dwrite(f"Character \'{main.data.players[-1].name}\' was added.\n")
 
+            #(M)onster add
             elif user_input == 'm':
-                main.add_creature(f"monster {len(main.data.monsters) + 1}", "M", typ='monster')
-                main.ui.dwrite(f"Monster {main.data.monsters[-1].name} was added.\n")
+                #monster를 data에 추가한다.
+                main.add_monster(f"monster {len(main.data.monsters) + 1}", "M")
+                #dialog를 갱신한다.
+                main.ui.dwrite(f"Monster \'{main.data.monsters[-1].name}\' was added.\n")
 
+            #(D)ead player
+            elif user_input == 'd':
+                try:
+                    main.ui.dwrite(f"player \'{main.data.players[-1].name}\' was deleted.\n")
+                    main.delete_player(len(main.data.players) - 1)
+                except IndexError:
+                    main.ui.dwrite("No more players to delete!\n")
+
+            elif not user_input.isascii():
+                main.ui.dwrite("Not ASCII! (한/영 키 확인)\n")
 
             #after event, refreshes with debugging print
             if user_input != None:
                 input_counter += 1
-                main.ui.twrite(main.data)
+                #battlefield을 갱신한다.
+                main.ui.bwrite(main.data)
+                #dialog에 디버그 메시지를 출력한다.
                 main.ui.dwrite(f"{input_counter} updated\n")
-                updateUI() #refreshes with changed main.console.
+                #commandbox를 갱신한다.
+                main.ui.cwrite("Command you can use: ")
+                #현재 battlefield, dialog, messagebox의 내용으로 새 layout을 출력한다.
+                updateUI()

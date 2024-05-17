@@ -7,42 +7,51 @@ class creature:
         self.icon = icon
 
 class monster(creature):
-    id : str
+    index : int
 
     def __init__(self, name:str, icon:str):
         super().__init__(name, icon)
 
 class character(creature):
-    id : str
+    index : Literal[0, 1, 2, 3, 4]
 
     def __init__(self, name:str, icon:str):
+        self.index = 0
         super().__init__(name, icon)
     
     def setVoice(self, high=740, middle=455, low=350, sec=0.13):
         self.voice = voicefunc.voice(high, middle, low, sec)
 
+class event:
+    pass
+
 class Data:
     monsters : list[monster] = []
     players : list[character] = []
+    eventList : list[event] = []
     
     def __init__(self):
         pass
-
-    def column_num(self):
-        return len(self.monsters) + 5
     
-    def initcreature(self, typ:Literal['character', 'monster']):
-        if typ == 'character':
-            last_index = len(self.players) - 1
-            if (last_index < 0) or (last_index > 4):
-                print("Not in 0~4 player range!")
+    #event의 수
+    def event_num(self):
+        return len(self.eventList)
+    
+    #players의 index 오류를 수정하고, index의 빈 자리를 앞쪽부터 반환한다.
+    def playerIndexCheck(self):
+        indexlist = [1, 2, 3, 4]
+        for player in self.players:
+            if not hasattr(player, "index"):
+                player.index = 0
+            
+            #index가 1,2,3,4 중 하나라면 그 자리는 차 있다. 중복되는 index는 0으로 초기화한다.
+            if player.index in indexlist:
+                indexlist.remove(player.index)
             else:
-                self.players[last_index].id = f"player {last_index + 1}"
-
-
-        elif typ == 'monster':
-            last_index = len(self.monsters) - 1
-            if last_index < 0:
-                print("less then 1 monster!")
-            else:
-                self.monsters[last_index].id = f"monster {last_index + 1}"
+                player.index = 0
+        
+        #남아있는 자리 중 가장 앞쪽을 반환한다. 없으면 0을 반환한다.
+        try:
+            return indexlist.pop(0)
+        except IndexError:
+            return 0
