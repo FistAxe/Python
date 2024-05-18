@@ -1,24 +1,25 @@
-from rich import print
+import random
+import time
+
+from rich.live import Live
+from rich.table import Table
+from rich.console import Group
+from rich.prompt import Prompt
 from rich.layout import Layout
 
-layout = Layout()
+answer : str = "init"
 
-layout.split_row(
-    Layout(name="left"),
-    Layout(name="right")
+def promptgen():
+    return Prompt.ask("asdf")
+prompt = Prompt.ask("press q")
+
+layout = Layout(
+    promptgen()
 )
 
-layout["left"].split_column(
-    Layout(name="up"),
-    Layout(name="down")
-)
-layout["up"].split_row(
-    Layout(name="leftleft"),
-    Layout(name="rightright")
-)
 
-layout["right"].update("right")
-layout["up"].update("up")
-layout["leftleft"].update("leftleft")
-
-print(layout)
+with Live(layout in range(40)) as live:
+    while 1:
+        live.update(layout)
+        if answer == 'q':
+            break

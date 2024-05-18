@@ -1,19 +1,21 @@
-import RichUI
+from RichUI import UI
+import os
 from RPGclass import Character, Monster, Data, Event
 from rich.live import Live
 from typing import Literal
 
-WIDTH = 120
-HEIGHT = 30
+terminalSize = os.get_terminal_size()
+WIDTH = terminalSize.columns
+HEIGHT = terminalSize.lines
 
 class Main:
     #추상적 클래스 선언. console, data 불러오기.
     testplayer : Character
-    ui : RichUI.UI
+    ui : UI
     data : Data
         
     def __init__(self):
-        self.ui = RichUI.console
+        self.ui = UI(WIDTH, HEIGHT)
         self.data = Data()
 
         #처음에 player 하나를 추가한다. 디버그용.
@@ -21,6 +23,13 @@ class Main:
 
         #character instance 하나를 Main.testplayer에 저장한다. 디버그용.
         self.testplayer = self.data.players[0]
+
+    def reset_terminal_size(self):
+        global WIDTH, HEIGHT
+        terminalSize = os.get_terminal_size()
+        WIDTH = terminalSize.columns
+        HEIGHT = terminalSize.lines
+        self.ui.resize(WIDTH, HEIGHT)
 
     #아군 추가
     def add_player(self, name:str, icon:str, voice:dict|Literal["silent"]|None = None):
@@ -63,11 +72,18 @@ class Main:
 
     #이벤트 추가. 기본적으로 맨 뒤에, index가 주어지면 eventList[index]에 추가.
     def add_event(self, typ:str="test", index:int | None = None):
-        new_event = Event()
-        if index == None:
-            self.data.eventList.append(new_event)
-        else:
-            self.data.eventList.insert(index, new_event)
+        new_event = None
+        if typ == "test":
+            new_event = Event(
+                {'player':'test'},
+                {'monster':'test'}
+            )
+
+        if new_event != None:
+            if index == None:
+                self.data.eventList.append(new_event)
+            else:
+                self.data.eventList.insert(index, new_event)
         self.data.eventIndexRefresh()
 
     #이벤트 삭제. 기본적으로 맨 아래.
@@ -84,7 +100,7 @@ if __name__ == "__main__":
     def layoutgen():
         return main.ui.layoutgen()
 
-    with Live(layoutgen(), auto_refresh=False) as live:
+    with Live(layoutgen(), console=main.ui, auto_refresh=False) as live:
         #Live(Layout()), arg) as live:
         #    ...
         #    updateUI()
@@ -94,6 +110,9 @@ if __name__ == "__main__":
         
         #앞으로 화면 갱신 시 이걸 쓸 거임.
         def updateUI():
+            #terminal 크기 갱신하고,
+            main.reset_terminal_size()
+            #새 layout 생성해서 깔기
             live.update(layoutgen(), refresh=True)
         #이렇게.
         updateUI()

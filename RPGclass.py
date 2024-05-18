@@ -1,5 +1,5 @@
 import voicefunc
-from typing import Literal
+from typing import Literal, List
 
 class Creature:
     def __init__(self, name:str, icon:str):
@@ -23,9 +23,41 @@ class Character(Creature):
         self.voice = voicefunc.voice(high, middle, low, sec)
 
 class Event:
-    index : int
+    
+    class SingleEffect:
 
+        class Effect:
+            def __init__(self, effect):
+                if effect == 'test':
+                    self.typ = 'test'
 
+        name : str
+        effect : Effect
+
+        def __init__(self, name, effect):
+            self.name = name
+            self.effect = self.Effect(effect)
+
+    #무엇(들)이 원인인가?
+    origins : List[SingleEffect]
+    
+    #무엇(들)이 대상인가?
+    targets : List[SingleEffect]
+
+    def __init__(self, origin_with_effect:dict, target_with_effect:dict):
+        self.origins = []
+        self.targets = []
+        self.initSingleEvents(origin_with_effect, typ="origin")
+        self.initSingleEvents(target_with_effect, typ="target")
+
+    def initSingleEvents(self, entity_and_effect:dict, typ:Literal["origin", "target"]):
+        for entity, effect in entity_and_effect.items():
+            singleeffect = self.SingleEffect(entity, effect)
+            if typ == "origin":
+                self.origins.append(singleeffect)
+            elif typ == "target":
+                self.targets.append(singleeffect)
+    
 
 class Data:
     monsters : list[Monster] = []
@@ -33,7 +65,10 @@ class Data:
     eventList : list[Event] = []
     
     def __init__(self):
-        event = Event()
+        event = Event(
+            {'player':'test'},
+            {'monster':'test'}
+        )
         self.eventList.append(event)
         self.eventIndexRefresh()
     

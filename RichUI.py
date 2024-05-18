@@ -3,7 +3,7 @@ from rich.layout import Layout
 from rich.panel import Panel
 from rich.align import Align
 from rich import box
-from RPGclass import Data, Monster, Event
+from RPGclass import Data, Monster, Event, Character
 from typing import List, Literal
 
 class Box(Panel):
@@ -24,10 +24,48 @@ class Battlefield(Box):
             daughterlayout = Layout(name=f"monster {i + 1}")
             yield daughterlayout
 
-    def eventlayoutgen(self, name_and_index:str, eventList:List[Event]):
+    def eventlayoutgen(self, creature:Character|Monster, eventList:List[Event]):
+        if isinstance(creature, Character):
+            typ = "player"
+        else:
+            typ = "monster"
+        index = creature.index
+
+        event_num = 1
         for event in eventList:
-            daughterlayout = Layout(name=f"{name_and_index}_event_{event.index}")
+            #event의 수만큼 캐릭터 위에 줄을 만든다.
+            daughterlayout = Layout(name=f"{typ}_{index}_event_{event_num}")
+            #초기화.
+            daughterlayout.update("")
+            
+            #이벤트의 모든 원인에 대해:
+            for origin in event.origins:
+                if (
+                    #대상의 이름이 creature의 이름에 포함되거나:
+                    origin.name in creature.name or
+                    #대상의 위치가 creature의 위치에 포함되면:
+                    origin.name in f"{typ}_{index}"
+                    ):
+                    #대상의 effect를 layout에 반영한다.
+                    daughterlayout.update(self.eventPanelgen(origin.effect))
+            
+            #이벤트의 모든 대상에 대해:
+            for target in event.targets:
+                if (
+                    #대상의 이름이 creature의 이름에 포함되거나:
+                    target.name in creature.name or
+                    #대상의 위치가 creature의 위치에 포함되면:
+                    target.name in f"{typ}_{index}"
+                    ):
+                    #대상의 effect를 layout에 반영한다.
+                    daughterlayout.update(self.eventPanelgen(target.effect))
+
+            #이벤트 index 증가.
+            event_num += 1
             yield daughterlayout
+
+    def eventPanelgen(self, effect:Event.SingleEffect.Effect):
+        return Panel("event.")
 
     def __init__(self, data:Data=None):
         #data 제대로 들어옴
@@ -80,7 +118,7 @@ class Battlefield(Box):
                         )
                     table[f"player {player.index}_namespace"].update(player.name)
                     table[f"player {player.index}_event"].split_column(
-                        *list(self.eventlayoutgen(f"player {player.index}", data.eventList))
+                        *list(self.eventlayoutgen(player, data.eventList))
                     )
                     playerindexlist.remove(player.index)
 
@@ -96,7 +134,7 @@ class Battlefield(Box):
                     )
                 table[f"monster {monster.index}_namespace"].update(monster.name)
                 table[f"monster {monster.index}_event"].split_column(
-                    *list(self.eventlayoutgen(f"monster {monster.index}", data.eventList))
+                    *list(self.eventlayoutgen(monster, data.eventList))
                 )
 
 
@@ -147,14 +185,20 @@ class UI(Console):
     commandbox : CommandBox
     layout : Layout
 
-    def __init__(self):
+    def __init__(self, console_width:int, console_height:int):
+        super().__init__(width=console_width, height=console_height-1)
         self.dialog = Dialog("__init__")
         self.battlefield = Battlefield("__init__")
         self.commandbox = CommandBox("__init__")
 
+    def resize(self, console_width, console_height):
+        self.width = console_width
+        self.height = console_height - 1
+
     #Live에서 호출할 layout을 생성한다. Live( Layout() ) 같은 식으로.
     def layoutgen(self):
         self.layout = Layout()
+        self.layout.size = self.height - 1
         self.layout.split_row(
             Layout(name="left"),
             Layout(self.dialog, name="right")
@@ -197,5 +241,3 @@ def parse(text:str, width, height):
         buf.pop(0)
     parsedtext = '\n'.join(buf)
     return parsedtext
-
-console : UI = UI()
