@@ -1,6 +1,6 @@
-from RichUI import UI
-import os
+import os, keyboard
 from RPGclass import Character, Monster, Data, Event
+from RichUI import UI
 from rich.live import Live
 from typing import Literal
 
@@ -19,10 +19,10 @@ class Main:
         self.data = Data()
 
         #처음에 player 하나를 추가한다. 디버그용.
-        self.add_player("test player", "@")
+        self.data.add_player("test player", "@", 30)
 
         #character instance 하나를 Main.testplayer에 저장한다. 디버그용.
-        self.testplayer = self.data.players[0]
+        self.data.testplayer = self.data.players[0]
 
     def reset_terminal_size(self):
         global WIDTH, HEIGHT
@@ -31,70 +31,33 @@ class Main:
         HEIGHT = terminalSize.lines
         self.ui.resize(WIDTH, HEIGHT)
 
-    #아군 추가
-    def add_player(self, name:str, icon:str, voice:dict|Literal["silent"]|None = None):
-        #생성
-        new_creature = Character(name, icon)
-        #목소리 설정
-        if voice == dict:
-            new_creature.setVoice(**voice)
-        elif voice == "silent":
-            pass
-        else:
-            new_creature.setVoice()
-        #index 설정
-        new_creature.index = self.data.playerIndexCheck()
-        #추가
-        self.data.players.append(new_creature)
-    
-    #적군 추가
-    def add_monster(self, name:str, icon:str):
-        #생성
-        new_creature = Monster(name, icon)
-        #index 설정
-        new_creature.index = len(self.data.monsters) + 1
-        #추가
-        self.data.monsters.append(new_creature)
-
-    #아군 삭제. 가장 왼쪽이 기본값.
-    def delete_player(self, index_in_players:int= -1):
+    def actionCaller(self, user_input:str):
         try:
-            self.data.players.pop(index_in_players)
-        except IndexError:
-            self.ui.dwrite("no such player index in players\n")
-
-    #적군 삭제. 가장 오른쪽이 기본값.
-    def kill_monster(self, index_in_monsters:int= -1):
-        try:
-            self.data.monsters.pop(index_in_monsters)
-        except IndexError:
-            self.ui.dwrite("no such monster index in monsters\n")
-
-    #이벤트 추가. 기본적으로 맨 뒤에, index가 주어지면 eventList[index]에 추가.
-    def add_event(self, typ:str="test", index:int | None = None):
-        new_event = None
-        if typ == "test":
-            new_event = Event(
-                {'player':'test'},
-                {'monster':'test'}
-            )
-
-        if new_event != None:
-            if index == None:
-                self.data.eventList.append(new_event)
-            else:
-                self.data.eventList.insert(index, new_event)
-        self.data.eventIndexRefresh()
-
-    #이벤트 삭제. 기본적으로 맨 아래.
-    def clear_event(self, index:int= -1):
-        try:
-            self.data.eventList.pop(index)
-        except IndexError:
-            self.ui.dwrite("No such event index in eventList\n")
+            output = self.data.choiceList[user_input].do()
+            if isinstance(output, str):
+                return {'dmessage' : output}
+            elif isinstance(output, tuple) and len(output) > 0 and output[0] == 'chat':
+                return dict([output])
+        except KeyError:
+            return None
+        
+#종료 후 입력 버퍼 초기화.
+def clear_terminal_buffer():
+    import os
+    if os.name == 'nt':
+        import msvcrt
+        while msvcrt.kbhit():
+            msvcrt.getch()
+    else:
+        import termios
+        import sys
+        import tty
+        termios.tcflush(sys.stdin, termios.TCIOFLUSH)
 
 if __name__ == "__main__":
     main = Main()
+    #아직 만드는 중
+    main.data.isTest = True
 
     #Makes Layout() from present main.ui
     def layoutgen():
@@ -119,68 +82,42 @@ if __name__ == "__main__":
 
         input_counter = 0
         while True:
-            user_input = input("Press your input")
+            #키보드 입력 시까지 일시정지
+            key_event = keyboard.read_event()
+            #키보드 'DOWN' 시 입력 받음
+            if key_event.event_type == 'down':
+                user_input = key_event.name
+            #아니면 key_event 다시 받기
+            else:
+                continue
             
+            #항상 q로 종료
             if user_input == 'q':
                 break
-            
-            #(I)nput
-            elif user_input == 'i':
-                main.ui.dwrite(f"nvoierhaoivhgoiewjhaoivghoiheiowhoivhoi하다니wjovig\n")
-            
-            #(V)oice
-            elif user_input == 'v':
-                for char in (main.testplayer.voice.speakgen("뭐라카노?", "_-^-.")):
-                    main.ui.dwrite(char)
-                    #현재 dialog 내용으로 새 layout을 출력한다.
-                    updateUI()
+            elif user_input == '`':
+                while True:
+                    resume = keyboard.read_event()
+                    if resume.event_type == 'down' and resume.name == '`':
+                        break
 
-            #(P)layer add
-            elif user_input == 'p':
-                #player를 data에 추가한다.
-                main.add_player(f"player {len(main.data.players) + 1}", "A")
-                #dialog를 갱신한다.
-                main.ui.dwrite(f"Character \'{main.data.players[-1].name}\' was added.\n")
-
-            #(M)onster add
-            elif user_input == 'm':
-                #Monster를 data에 추가한다.
-                main.add_monster(f"monster {len(main.data.monsters) + 1}", "M")
-                #dialog를 갱신한다.
-                main.ui.dwrite(f"Monster \'{main.data.monsters[-1].name}\' was added.\n")
-
-            #(D)ead player
-            elif user_input == 'd':
-                try:
-                    main.ui.dwrite(f"player \'{main.data.players[-1].name}\' was deleted.\n")
-                    main.delete_player(len(main.data.players) - 1)
-                except IndexError:
-                    main.ui.dwrite("No more players to delete!\n")
-
-            #(K)ill monster
-            elif user_input == 'k':
-                try:
-                    main.ui.dwrite(f"monster \'{main.data.monsters[-1].name}\' was deleted.\n")
-                    main.kill_monster(len(main.data.monsters) - 1)
-                except IndexError:
-                    main.ui.dwrite("No more monsters to delete!\n")
-
-            #(E)vent add
-            elif user_input == 'e':
-                main.add_event(typ="test")
-                main.ui.dwrite(f"event \'test\' added\n")
-
-            #(C)lear event
-            elif user_input == 'c':
-                try:
-                    main.ui.dwrite("trying to clear last event...\n")
-                    main.clear_event()
-                except IndexError:
-                    main.ui.dwrite("no such event!\n")
-
-
+            #한/영 키 확인
             elif not user_input.isascii():
                 main.ui.dwrite("Not ASCII! (한/영 키 확인)\n")
+
+            else:
+                output : dict|None = main.actionCaller(user_input)
+                #{'결과 종류':'결과값'}
+                if type(output) == dict:
+                    #일반 메시지
+                    if 'dmessage' in output:
+                        main.ui.dwrite(output.get('dmessage'))
+                    #실시간 갱신 메시지
+                    if 'chat' in output:
+                        #char의 대상은 Generator로, sleep()이 걸려 있다.
+                        for char in output.get('chat'):
+                            main.ui.dwrite(char)
+                            #한 글자마다 현재 dialog 내용으로 새 layout을 출력한다.
+                            updateUI()
 
             #after event, refreshes with debugging print
             if user_input != None:
@@ -190,6 +127,12 @@ if __name__ == "__main__":
                 #dialog에 디버그 메시지를 출력한다.
                 main.ui.dwrite(f"{input_counter} updated\n")
                 #commandbox를 갱신한다.
-                main.ui.cwrite("Command you can use: ")
+                main.data.make_choiceList()
+                main.ui.cwrite(main.data.choiceList)
                 #현재 battlefield, dialog, messagebox의 내용으로 새 layout을 출력한다.
                 updateUI()
+        
+        #입력 버퍼 초기화 후 Live 종료.
+        clear_terminal_buffer()
+    #Live 끝
+#main 끝

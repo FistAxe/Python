@@ -1,10 +1,31 @@
-from rich.console import Console
+from rich.console import Console, Group
 from rich.layout import Layout
 from rich.panel import Panel
 from rich.align import Align
 from rich import box
-from RPGclass import Data, Monster, Event, Character
+from RPGclass import Data, Monster, Event, Character, Choice
 from typing import List, Literal
+
+colorDict = {
+    'bg_test_yellow' : '#616006',
+    'bg_damage_red' : '#230603',
+    'bg_attack_yellow' : '#202003',
+    'HP_green' : '#2DD32D',
+    'HP_yellow': '#D3D32D',
+    'HP_red' : '#911F1F'
+}
+
+def HPcolor(HP:int, max_HP:int):
+    HPratio = HP / max_HP
+    if HPratio > 0.5:
+        return f"#{hex(int((0x2D/0xD3)*(HPratio - 0.5)*2 + 0x2D))[2:]}D32D"
+    else :
+        return (
+            f"#{hex(int((0x91/0xD3)*HPratio*2 + 0x91))[2:]}" +
+            f"{hex(int((0x1F/0xD3)*HPratio*2 + 0x1F))[2:]}" +
+            f"{hex(int((0x1F/0xD3)*HPratio*2 + 0x1F))[2:]}"
+            )
+
 
 class Box(Panel):
     def __init__(self, update="Box called without its renderable", name:str="Box"):
@@ -12,12 +33,6 @@ class Box(Panel):
 
 class Battlefield(Box):
     #Panel(get_battlefield())
-    
-    event : Layout
-    field : Panel
-    namespace : Panel
-
-    playerlist : list
 
     def monsterlayoutgen(self, monsters:List[Monster]):
         for i in range(len(monsters)):
@@ -42,30 +57,47 @@ class Battlefield(Box):
             for origin in event.origins:
                 if (
                     #대상의 이름이 creature의 이름에 포함되거나:
-                    origin.name in creature.name or
+                    origin.target in creature.name or
                     #대상의 위치가 creature의 위치에 포함되면:
-                    origin.name in f"{typ}_{index}"
+                    origin.target in f"{typ}_{index}"
                     ):
                     #대상의 effect를 layout에 반영한다.
-                    daughterlayout.update(self.eventPanelgen(origin.effect))
+                    daughterlayout.update(self.eventPanelgen(origin))
             
             #이벤트의 모든 대상에 대해:
             for target in event.targets:
                 if (
                     #대상의 이름이 creature의 이름에 포함되거나:
-                    target.name in creature.name or
+                    target.target in creature.name or
                     #대상의 위치가 creature의 위치에 포함되면:
-                    target.name in f"{typ}_{index}"
+                    target.target in f"{typ}_{index}"
                     ):
                     #대상의 effect를 layout에 반영한다.
-                    daughterlayout.update(self.eventPanelgen(target.effect))
+                    daughterlayout.update(self.eventPanelgen(target))
 
             #이벤트 index 증가.
             event_num += 1
             yield daughterlayout
 
-    def eventPanelgen(self, effect:Event.SingleEffect.Effect):
-        return Panel("event.")
+    def eventPanelgen(self, single_effect:Event.SingleEffect):
+        icon = single_effect.get_Icon()
+        if icon == None:
+            icon = ""
+        content = single_effect.get_content()
+        if content == None:
+            content = ""
+            colon = ''
+        else:
+            colon = ':'
+        color = single_effect.get_color()
+        if color == None:
+            color = ""
+        try:
+            color_code = colorDict[color]
+        except KeyError:
+            print("No such color code!")
+
+        return Align(f"{icon}{colon}{content}", align="center", vertical="middle", style=f"on {color_code}")
 
     def __init__(self, data:Data=None):
         #data 제대로 들어옴
@@ -116,7 +148,12 @@ class Battlefield(Box):
                     table[f"player {player.index}_field"].update(
                         Panel(Align(f"{player.icon}", align="center"), box=box.HEAVY)
                         )
-                    table[f"player {player.index}_namespace"].update(player.name)
+                    namespace = Group(
+                        player.name,
+                        Align(f"{player.HP}/{player.max_HP}", align="center", style=f"{HPcolor(player.HP, player.max_HP)}"),
+                        "Status"
+                    )
+                    table[f"player {player.index}_namespace"].update(namespace)
                     table[f"player {player.index}_event"].split_column(
                         *list(self.eventlayoutgen(player, data.eventList))
                     )
@@ -132,13 +169,16 @@ class Battlefield(Box):
                 table[f"monster {monster.index}_field"].update(
                     Panel(Align(f"{monster.icon}", align="center"), box=box.HEAVY)
                     )
-                table[f"monster {monster.index}_namespace"].update(monster.name)
+                namespace = Group(
+                    monster.name,
+                    Align(f"{monster.HP}/{monster.max_HP}", align="center", style=f"{HPcolor(monster.HP, monster.max_HP)}"),
+                    "Status"
+                    )
+                table[f"monster {monster.index}_namespace"].update(namespace)
                 table[f"monster {monster.index}_event"].split_column(
                     *list(self.eventlayoutgen(monster, data.eventList))
                 )
 
-
-            
             character_info = Panel("Data")
 
         elif Data == None:
@@ -175,7 +215,17 @@ class Dialog(Box):
         super().__init__(self.wholetext, name="Dialog")
 
 class CommandBox(Box):
-    def __init__(self, update="CB called without its renderable"):
+    def __init__(self, choiceList:dict[str, Choice]|str|None = None):
+        if choiceList == (None or {}):
+            update = "Press any key"
+        elif type(choiceList) == str:
+            update = choiceList
+        else:
+            update = ""
+            for choice in choiceList.values():
+                command_str = choice.string
+                update += command_str
+                update += " "
         super().__init__(update, name="CommandBox")
 
 class UI(Console):
@@ -224,8 +274,8 @@ class UI(Console):
         self.battlefield = Battlefield(data)
 
     #ui.commandbox를 재생성한다.
-    def cwrite(self, commandtext:str):
-        self.commandbox = CommandBox(commandtext)
+    def cwrite(self, choiceList:Data.choiceList):
+        self.commandbox = CommandBox(choiceList)
 
 #너비, 높이만 주어지면 어디든 쓸 수 있는 텍스트 조정 함수
 def parse(text:str, width, height):
