@@ -1,6 +1,6 @@
-import keyboard
+from rich.layout import Layout
+from rich import print
 
-events = keyboard.read_event()
-
-key = events.name
-print(key)
+c = Layout()
+c.split_column(" ")
+print(c)

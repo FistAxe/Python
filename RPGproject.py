@@ -1,8 +1,10 @@
 import os, keyboard
-from RPGclass import Character, Monster, Data, Event
+from RPGclass import Character
+from RPGdata import Data
 from RichUI import UI
 from rich.live import Live
 from typing import Literal
+from RPGasset import andrew, brian, cinnamon, dahlia
 
 terminalSize = os.get_terminal_size()
 WIDTH = terminalSize.columns
@@ -10,19 +12,21 @@ HEIGHT = terminalSize.lines
 
 class Main:
     #추상적 클래스 선언. console, data 불러오기.
-    testplayer : Character
     ui : UI
     data : Data
+    screenmode : Literal["select", "default"]
         
     def __init__(self):
         self.ui = UI(WIDTH, HEIGHT)
         self.data = Data()
+        self.screenmode = "init"
 
         #처음에 player 하나를 추가한다. 디버그용.
-        self.data.add_player("test player", "@", 30)
+        self.data.add_player(andrew)
+        self.data.add_player(brian)
+        self.data.add_player(cinnamon)
+        self.data.add_player(dahlia)
 
-        #character instance 하나를 Main.testplayer에 저장한다. 디버그용.
-        self.data.testplayer = self.data.players[0]
 
     def reset_terminal_size(self):
         global WIDTH, HEIGHT
@@ -30,16 +34,6 @@ class Main:
         WIDTH = terminalSize.columns
         HEIGHT = terminalSize.lines
         self.ui.resize(WIDTH, HEIGHT)
-
-    def actionCaller(self, user_input:str):
-        try:
-            output = self.data.choiceList[user_input].do()
-            if isinstance(output, str):
-                return {'dmessage' : output}
-            elif isinstance(output, tuple) and len(output) > 0 and output[0] == 'chat':
-                return dict([output])
-        except KeyError:
-            return None
         
 #종료 후 입력 버퍼 초기화.
 def clear_terminal_buffer():
@@ -87,6 +81,7 @@ if __name__ == "__main__":
             #키보드 'DOWN' 시 입력 받음
             if key_event.event_type == 'down':
                 user_input = key_event.name
+                main.reset_terminal_size()
             #아니면 key_event 다시 받기
             else:
                 continue
@@ -104,20 +99,23 @@ if __name__ == "__main__":
             elif not user_input.isascii():
                 main.ui.dwrite("Not ASCII! (한/영 키 확인)\n")
 
+            #영어 키보드
             else:
-                output : dict|None = main.actionCaller(user_input)
-                #{'결과 종류':'결과값'}
-                if type(output) == dict:
+                try:
+                    #log를 가져온다.
+                    output = main.data.run_command(user_input, main.screenmode)
                     #일반 메시지
-                    if 'dmessage' in output:
-                        main.ui.dwrite(output.get('dmessage'))
+                    if isinstance(output, str):
+                        main.ui.dwrite(output)
                     #실시간 갱신 메시지
-                    if 'chat' in output:
+                    elif isinstance(output, tuple) and len(output) > 0 and output[0] == 'chat':
                         #char의 대상은 Generator로, sleep()이 걸려 있다.
-                        for char in output.get('chat'):
+                        for char in output[1]:
                             main.ui.dwrite(char)
                             #한 글자마다 현재 dialog 내용으로 새 layout을 출력한다.
                             updateUI()
+                except KeyError:
+                    pass
 
             #after event, refreshes with debugging print
             if user_input != None:
@@ -127,8 +125,8 @@ if __name__ == "__main__":
                 #dialog에 디버그 메시지를 출력한다.
                 main.ui.dwrite(f"{input_counter} updated\n")
                 #commandbox를 갱신한다.
-                main.data.make_choiceList()
-                main.ui.cwrite(main.data.choiceList)
+                main.data.make_commandList()
+                main.ui.cwrite(main.data.commandList)
                 #현재 battlefield, dialog, messagebox의 내용으로 새 layout을 출력한다.
                 updateUI()
         

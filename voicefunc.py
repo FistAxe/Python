@@ -18,13 +18,7 @@ bip = generateBeep(740, SEC)
 bop = generateBeep(455, SEC)
 bup = generateBeep(350, SEC)
 
-class VOICESET(TypedDict):
-    high: int
-    middle: int
-    low: int
-    sec: float
-
-defalt_voiceset : VOICESET = {
+defalt_voiceset = {
     'high': 740,
     'middle': 455,
     'low': 350,
@@ -32,11 +26,13 @@ defalt_voiceset : VOICESET = {
 }
 
 class voice:
-    def __init__(self, high=740, middle=455, low=350, sec=0.11):
-        self.SEC = sec
-        self.bip = generateBeep(high, self.SEC)
-        self.bop = generateBeep(middle, self.SEC)
-        self.bup = generateBeep(low, self.SEC)
+    def __init__(self, **voiceset):
+        if voiceset == None:
+            voiceset = defalt_voiceset
+        self.SEC = voiceset['sec']
+        self.bip = generateBeep(voiceset["high"], self.SEC)
+        self.bop = generateBeep(voiceset["middle"], self.SEC)
+        self.bup = generateBeep(voiceset["low"], self.SEC)
         self.bip.set_volume(0.6)
         self.bop.set_volume(0.6)
         self.bup.set_volume(0.6)
@@ -74,6 +70,6 @@ def voiceFuncTest(voice:voice):
         print(chr, end='')
     
 if __name__ == "__main__":
-    samplevoice = voice(**defalt_voiceset)
+    samplevoice = voice()
     voiceFuncTest(samplevoice, "뭐라카노?", "_-^-.")
     voiceFuncTest(samplevoice, "니 내 누군지 아나?", "-.-.^^- _- ")

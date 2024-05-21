@@ -3,10 +3,12 @@ from rich.layout import Layout
 from rich.panel import Panel
 from rich.align import Align
 from rich import box
-from RPGclass import Data, Monster, Event, Character, Choice
-from typing import List, Literal
+from RPGclass import Effect, Creature, Event
+from RPGdata import Data
+from typing import List
 
 colorDict = {
+    'background' : "black",
     'bg_test_yellow' : '#616006',
     'bg_damage_red' : '#230603',
     'bg_attack_yellow' : '#202003',
@@ -34,70 +36,65 @@ class Box(Panel):
 class Battlefield(Box):
     #Panel(get_battlefield())
 
-    def monsterlayoutgen(self, monsters:List[Monster]):
-        for i in range(len(monsters)):
-            daughterlayout = Layout(name=f"monster {i + 1}")
+    #세로 축: 하나의 개체.
+    class CharacterLayout(Layout):
+        def add_owner(self, owner:Creature):
+            self.owner = owner
+
+    #각 칸: 하나의 effect.
+    class EffectLayout(Layout):
+        def add_effect(self, effect:Effect):
+            self.effect = effect
+
+        def effectPanelgen(self, effect:Effect):
+            icon = effect.get_Icon()
+            if icon == None:
+                icon = ""
+            content = effect.get_content()
+            if content == None:
+                content = ""
+                colon = ''
+            else:
+                colon = ':'
+
+            #색의 별명을 얻어 와서
+            color = effect.get_color()
+            #없으면 무색
+            if color == None:
+                color = "background"
+            #색 별명으로 실제 색을 맨 위 colorDict에서 찾는다.
+            try:
+                color_code = colorDict[color]
+            except KeyError:
+                print("No such color code!")
+
+            #event 한 칸 반환
+            self.update(
+                Align(
+                    f"{icon}{colon}{content}",
+                    align="center",
+                    vertical="middle",
+                    style=f"on {color_code}"
+                    )
+                )
+
+    def creatureLayoutGen(self, iterable:List[Creature]):
+        for entity in iterable:
+            daughterlayout = self.CharacterLayout(name=f"{entity.name}")
+            daughterlayout.add_owner(entity)
             yield daughterlayout
 
-    def eventlayoutgen(self, creature:Character|Monster, eventList:List[Event]):
-        if isinstance(creature, Character):
-            typ = "player"
+    def eventLayoutGen(self, owner:Creature, iterable:List[Event]):
+        if iterable == []:
+            yield Layout(" ")
         else:
-            typ = "monster"
-        index = creature.index
-
-        event_num = 1
-        for event in eventList:
-            #event의 수만큼 캐릭터 위에 줄을 만든다.
-            daughterlayout = Layout(name=f"{typ}_{index}_event_{event_num}")
-            #초기화.
-            daughterlayout.update("")
-            
-            #이벤트의 모든 원인에 대해:
-            for origin in event.origins:
-                if (
-                    #대상의 이름이 creature의 이름에 포함되거나:
-                    origin.target in creature.name or
-                    #대상의 위치가 creature의 위치에 포함되면:
-                    origin.target in f"{typ}_{index}"
-                    ):
-                    #대상의 effect를 layout에 반영한다.
-                    daughterlayout.update(self.eventPanelgen(origin))
-            
-            #이벤트의 모든 대상에 대해:
-            for target in event.targets:
-                if (
-                    #대상의 이름이 creature의 이름에 포함되거나:
-                    target.target in creature.name or
-                    #대상의 위치가 creature의 위치에 포함되면:
-                    target.target in f"{typ}_{index}"
-                    ):
-                    #대상의 effect를 layout에 반영한다.
-                    daughterlayout.update(self.eventPanelgen(target))
-
-            #이벤트 index 증가.
-            event_num += 1
-            yield daughterlayout
-
-    def eventPanelgen(self, single_effect:Event.SingleEffect):
-        icon = single_effect.get_Icon()
-        if icon == None:
-            icon = ""
-        content = single_effect.get_content()
-        if content == None:
-            content = ""
-            colon = ''
-        else:
-            colon = ':'
-        color = single_effect.get_color()
-        if color == None:
-            color = ""
-        try:
-            color_code = colorDict[color]
-        except KeyError:
-            print("No such color code!")
-
-        return Align(f"{icon}{colon}{content}", align="center", vertical="middle", style=f"on {color_code}")
+            for index, event in enumerate(iterable):
+                daughterlayout = self.EffectLayout(name=f"event_{index + 1}")
+                daughterlayout.update("")
+                for effect in event.effects:
+                    if effect.target == owner:
+                        daughterlayout.add_effect(effect)
+                yield daughterlayout
 
     def __init__(self, data:Data=None):
         #data 제대로 들어옴
@@ -123,10 +120,11 @@ class Battlefield(Box):
             )
             
             #data의 monster 수만큼 monsterlayout 생성.
-            monsterlist = list(self.monsterlayoutgen(data.monsters))
+            monsterlist = list(self.creatureLayoutGen(data.monsters))
             table["monsterside"].split_row(*monsterlist)
 
             #각 Creature마다 event 칸, field 칸, namespace 칸을 가진다.
+            #각 "player i_event", "monster i_event"의 이름 형식
             for playerlayout in table["playerside"].children:
                 playerlayout.split_column(
                     Layout(name=f"{playerlayout.name}_event"),
@@ -155,10 +153,11 @@ class Battlefield(Box):
                     )
                     table[f"player {player.index}_namespace"].update(namespace)
                     table[f"player {player.index}_event"].split_column(
-                        *list(self.eventlayoutgen(player, data.eventList))
+                        *list(self.eventLayoutGen(player, data.eventList))
                     )
                     playerindexlist.remove(player.index)
 
+            #비어있는 아군의 세부 사항 지정.
             for blank in playerindexlist:
                 table[f"player {blank}_field"].update(" ")
                 table[f"player {blank}_namespace"].update("No player")
@@ -176,10 +175,10 @@ class Battlefield(Box):
                     )
                 table[f"monster {monster.index}_namespace"].update(namespace)
                 table[f"monster {monster.index}_event"].split_column(
-                    *list(self.eventlayoutgen(monster, data.eventList))
+                    *list(self.eventLayoutGen(monster, data.eventList))
                 )
 
-            character_info = Panel("Data")
+            character_info = Panel("Info")
 
         elif Data == None:
             table = Panel("No Data input")
@@ -202,7 +201,7 @@ class Dialog(Box):
 
     wholetext : str
     
-    def __init__(self, update="Dialog called without its renderable", refresh:bool=False):
+    def __init__(self, update="Dialog called without its renderable", refresh:bool=False, width:int=45, height:int=25):
         if (refresh == False) and hasattr(self, "wholetext"):
             self.wholetext = self.wholetext + update
         else:
@@ -210,21 +209,20 @@ class Dialog(Box):
         
         #if not (hasattr(self, "width") or hasattr(self, "height")):
         #    super().__init__("making width and height")
-        self.wholetext = parse(self.wholetext, 45, 20)
+        self.wholetext = parse(self.wholetext, 48, height - 3)
         
         super().__init__(self.wholetext, name="Dialog")
 
 class CommandBox(Box):
-    def __init__(self, choiceList:dict[str, Choice]|str|None = None):
-        if choiceList == (None or {}):
+    def __init__(self, commandList:dict[str, str]|str|None = None):
+        if commandList == (None or {}):
             update = "Press any key"
-        elif type(choiceList) == str:
-            update = choiceList
+        elif isinstance(commandList, str):
+            update = commandList
         else:
             update = ""
-            for choice in choiceList.values():
-                command_str = choice.string
-                update += command_str
+            for string in commandList.values():
+                update += string
                 update += " "
         super().__init__(update, name="CommandBox")
 
@@ -267,25 +265,33 @@ class UI(Console):
         #ui.dialog 자체를 재정의하므로, ui.dialog 밖에서 정의된다.
         #ui.dialog까지만 업데이트. 나머지는 layoutgen이 처리.
         self.dialog.wholetext += text
-        self.dialog = Dialog(self.dialog.wholetext)
+        self.dialog = Dialog(self.dialog.wholetext, width=self.width, height=self.height)
 
     #ui.battlefield를 재생성한다.
     def bwrite(self, data):
         self.battlefield = Battlefield(data)
 
     #ui.commandbox를 재생성한다.
-    def cwrite(self, choiceList:Data.choiceList):
-        self.commandbox = CommandBox(choiceList)
+    def cwrite(self, commandList:Data.commandList):
+        self.commandbox = CommandBox(commandList)
 
 #너비, 높이만 주어지면 어디든 쓸 수 있는 텍스트 조정 함수
-def parse(text:str, width, height):
+def parse(text:str, width, height, foreign:bool=True):
     #1. 추가된 text에 \n 추가해서 width 맞추기
     buf = text.split('\n')
-    for col in range(len(buf)):
-        while len(buf[col]) > width:
-            line = buf[col]
-            buf[col] = line[:width - 1] #len(bug[col]) = 0 ~ (width - 1) = width
-            buf.insert(col + 1,(line[width:]))
+    line_counter = 0
+    while line_counter < len(buf):
+        char_num = 0
+        wide_num = 0
+        for char in buf[line_counter]:
+            char_num += 1
+            if foreign == True and not char.isascii():
+                wide_num += 1
+        if char_num + wide_num > width:
+            buffer_line = buf[line_counter]
+            buf[line_counter] = buffer_line[:width - 1 - wide_num] #len(buf[line_counter]) = 0 ~ (width - 1) = width
+            buf.insert(line_counter + 1, (buffer_line[width - wide_num - 1:]))
+        line_counter += 1
     #2. text의 \n 조사해서 앞부분의 문장 날리기
     while len(buf) > height:
         buf.pop(0)
