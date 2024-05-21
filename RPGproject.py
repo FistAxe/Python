@@ -1,5 +1,4 @@
 import os, keyboard
-from RPGclass import Character
 from RPGdata import Data
 from RichUI import UI
 from rich.live import Live

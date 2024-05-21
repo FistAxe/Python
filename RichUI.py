@@ -46,37 +46,40 @@ class Battlefield(Box):
         def add_effect(self, effect:Effect):
             self.effect = effect
 
-        def effectPanelgen(self, effect:Effect):
-            icon = effect.get_Icon()
-            if icon == None:
-                icon = ""
-            content = effect.get_content()
-            if content == None:
-                content = ""
-                colon = ''
-            else:
-                colon = ':'
+        def effectPanelgen(self):
+            if hasattr(self, 'effect'):
+                icon = self.effect.get_Icon()
+                if icon == None:
+                    icon = ""
+                content = self.effect.get_content()
+                if content == None:
+                    content = ""
+                    colon = ''
+                else:
+                    colon = ':'
 
-            #색의 별명을 얻어 와서
-            color = effect.get_color()
-            #없으면 무색
-            if color == None:
-                color = "background"
-            #색 별명으로 실제 색을 맨 위 colorDict에서 찾는다.
-            try:
-                color_code = colorDict[color]
-            except KeyError:
-                print("No such color code!")
+                #색의 별명을 얻어 와서
+                color = self.effect.get_color()
+                #없으면 무색
+                if color == None:
+                    color = "background"
+                #색 별명으로 실제 색을 맨 위 colorDict에서 찾는다.
+                try:
+                    color_code = colorDict[color]
+                except KeyError:
+                    print("No such color code!")
 
-            #event 한 칸 반환
-            self.update(
-                Align(
-                    f"{icon}{colon}{content}",
-                    align="center",
-                    vertical="middle",
-                    style=f"on {color_code}"
+                #event 한 칸 반환
+                self.update(
+                    Align(
+                        f"{icon}{colon}{content}",
+                        align="center",
+                        vertical="middle",
+                        style=f"on {color_code}"
+                        )
                     )
-                )
+            else:
+                self.update(" ")
 
     def creatureLayoutGen(self, iterable:List[Creature]):
         for entity in iterable:
@@ -94,6 +97,7 @@ class Battlefield(Box):
                 for effect in event.effects:
                     if effect.target == owner:
                         daughterlayout.add_effect(effect)
+                        daughterlayout.effectPanelgen()
                 yield daughterlayout
 
     def __init__(self, data:Data=None):

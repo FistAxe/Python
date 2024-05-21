@@ -203,7 +203,11 @@ class Data:
         
     #샘플 이벤트 추가. 기본적으로 맨 뒤에, index가 주어지면 eventList[index]에 추가.
     def add_sampleEvent(self, index:int|None=None):
-        new_event = Event(self.testplayer, {'monster_1':'damage'}, self)
+        new_event = Event(
+            self.testplayer,
+            {'self_' : 'attack',
+             'monster_1' : 'damage'},
+            self)
         if index == None:
             self.eventList.append(new_event)
         elif type(index) == int:

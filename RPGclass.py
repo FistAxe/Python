@@ -82,7 +82,7 @@ class Event:
     }
 
     #화면 상에 있으면 True를 반환하는 트리거.
-    def defalt_trigger(self, self_entity:Union['Character', 'Monster'], data:'Data'):
+    def defalt_trigger(self_entity:Union['Character', 'Monster'], data:'Data'):
         if self_entity.index > 0:
             return 1
         else:
@@ -111,7 +111,11 @@ class Event:
         if self.target_with_effect != None:
             for target, effect in self.target_with_effect.items():
                 typ, num = target.split('_')
-                if typ == 'friend':
+                if typ == 'self':
+                    new_effect = Effect(self.origin, effect)
+                    self.effects.append(new_effect)
+                    pass
+                elif typ == 'friend':
                     typ = 'player' if self.origin.typ == 'character' else 'monster'
                 elif typ == 'enemy':
                     typ = 'monster' if self.origin.typ == 'monster' else 'character'
@@ -121,11 +125,14 @@ class Event:
                         new_effect = Effect(data.players[index], effect)
                         self.effects.append(new_effect)
                 elif typ == 'monster':
-                    max = len(data.monsters)
-                    target_list = get_list_from(num, max)
+                    max_index = len(data.monsters)
+                    target_list = get_list_from(num, max_index)
                     for index in target_list:
-                        new_effect = Effect(data.monsters[index], effect)
-                        self.effects.append(new_effect)
+                        try:
+                            new_effect = Effect(data.monsters[index - 1], effect)
+                            self.effects.append(new_effect)
+                        except:
+                            pass
 
     def change_trigger(self, callable:Callable|None):
         self.trigger_condition = callable
