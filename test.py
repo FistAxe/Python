@@ -1,6 +1,14 @@
-from rich.layout import Layout
-from rich import print
+class C:
+    _text = ""
 
-c = Layout()
-c.split_column(" ")
-print(c)
+    @property
+    def text(self):
+        return self._text
+    @text.setter
+    def text(self, string):
+        self._text = string
+
+c = C()
+c.text += 'abc'
+c.text += 'ands'
+print(c.text)

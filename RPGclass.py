@@ -5,28 +5,19 @@ if TYPE_CHECKING:
     from RPGdata import Data
 
 #creature을 target으로 가지는 클래스.
+#effect_type, 
 class Effect:
     #public
     target : 'Creature'    #creature의 instance
     #private
     _typ : Literal["fixed", "position"]
     _icon : str
-    _value : str
+    _content : str
     _color : str
 
-    def __init__(
-        self,
-        target:'Creature',
-        effect_type,
-        value:int|None=None,
-        atk:str|None=None,
-        defence:str|None=None,
-        mag:str|None=None,
-        mind:str|None=None,
-        **kwargs
-        ):
-
+    def __init__(self, target:'Creature', effect_type, value:int|None=None):
         self.target = target
+        self.value = value
 
 #            for coeff, formula in {'atk':atk, 'defence':defence, 'mag':mag, 'mind':mind}.items():
 #                self._value += parse_coeff(coeff, formula)
@@ -38,7 +29,8 @@ class Effect:
         if effect_type == 'damage':
             self._typ = 'fixed'
             self._icon = ':drop_of_blood:'
-            self._value = "[b red]-7[/b red]"
+            self.value = -7
+            self._content = f"[b red]{self.value}[/b red]"
             self._color = 'bg_damage_red'
         if effect_type == 'attack':
             self._typ = 'fixed'
@@ -53,8 +45,8 @@ class Effect:
 
     def get_content(self):
         try:
-            return self._value
-        except:
+            return self._content
+        except ValueError:
             return None
             
     def get_color(self):
@@ -64,8 +56,11 @@ class Effect:
             return None
         
     def execute(self, data:'Data'):
-        #self.target.HP - self.value
+        if type(self.value) == int:
+            self.target.HP += self.value
         if self.target.HP <= 0:
+            self.target.HP = 0
+            self.target.status = 'dead'
             return False
         else:
             return True
@@ -80,18 +75,17 @@ class Event:
     target_with_effect:Dict[str, str]={
         "enemy_1" : "damage_7"
     }
-
-    #화면 상에 있으면 True를 반환하는 트리거.
-    def defalt_trigger(self_entity:Union['Character', 'Monster'], data:'Data'):
-        if self_entity.index > 0:
+        
+    #발동 조건은? -> 우선순위
+    #기본값은 화면 상에 있으면 True를 반환하는 트리거.
+    @staticmethod
+    def trigger_condition(owner:Union['Character', 'Monster'], data:'Data') -> int :
+        if owner.index > 0:
             return 1
         else:
             return 0
         
-    #발동 조건은? -> 우선순위
-    trigger_condition : Callable[['Creature', 'Data'], int]  | None = defalt_trigger
-
-    def __init__(self, origin:'Creature', target_with_effect:dict, data:'Data'):
+    def __init__(self, origin:'Creature', data:'Data', target_with_effect:dict=None):
         self.effects = []
         if origin != None:
             self.origin = origin
@@ -108,30 +102,39 @@ class Event:
             self.speed = 0
 
     def calculate_effects(self, data:'Data'):
+        value = None
         if self.target_with_effect != None:
             for target, effect in self.target_with_effect.items():
-                typ, num = target.split('_')
+                typ = target.split('_')
+                try:
+                    num = typ[1]
+                    typ = typ[0]
+                except IndexError:
+                    num = ""
                 if typ == 'self':
                     new_effect = Effect(self.origin, effect)
                     self.effects.append(new_effect)
+                    value = new_effect.value
                     pass
                 elif typ == 'friend':
                     typ = 'player' if self.origin.typ == 'character' else 'monster'
                 elif typ == 'enemy':
-                    typ = 'monster' if self.origin.typ == 'monster' else 'character'
+                    typ = 'monster' if self.origin.typ == 'monster' else 'player'
                 if typ == 'player':
                     target_list = get_list_from(num, 4)
-                    for index in target_list:
-                        new_effect = Effect(data.players[index], effect)
-                        self.effects.append(new_effect)
+                    for target_index in target_list:
+                        for player in data.players:
+                            if player.index in [1, 2, 3, 4] and player.index == target_index:
+                                new_effect = Effect(player, effect, value)
+                                self.effects.append(new_effect)
                 elif typ == 'monster':
                     max_index = len(data.monsters)
                     target_list = get_list_from(num, max_index)
                     for index in target_list:
                         try:
-                            new_effect = Effect(data.monsters[index - 1], effect)
+                            new_effect = Effect(data.monsters[index - 1], effect, value)
                             self.effects.append(new_effect)
-                        except:
+                        except IndexError:
                             pass
 
     def change_trigger(self, callable:Callable|None):
@@ -151,9 +154,24 @@ class Creature:
         self.HP = self.max_HP = HP
         self.speed = 1
         self.key = key
+        self._status = "Status"
         self.command : str = f"Blank {self.name} command"
         self.hascommand : bool = False
         self.available_events : List[Type[Event]]=[]
+
+    @property
+    def status(self):
+        emoji = ""
+        if 'dead' in self._status:
+            emoji = "dead"
+        elif 'hurt' in self._status:
+            emoji += "hurt"
+        return emoji
+    
+    @status.setter
+    def status(self, string:str):
+        if string in ['dead']:
+            self._status = string
 
     def add_key(self, key:str):
         self.key = key
@@ -175,7 +193,7 @@ class Creature:
     def get_event(self, data:'Data'):
         for eventClass in self.available_events:
             if eventClass.trigger_condition(self, data):
-                event = eventClass(data)
+                event = eventClass(self, data)
                 return event
         return None
     
@@ -186,12 +204,40 @@ class Monster(Creature):
     typ = 'monster'
     #monster의 특징: 화면에 나옴
     index : int
+    #지금까지 생성된 monster의 수. 클래스 변수.
+    num : int = 0
 
+    monster_events = []
+        
     class stab(Event):
-        pass
+        @staticmethod
+        def trigger_condition(owner:Union['Character', 'Monster'], data:'Data') -> int :
+            if owner.index > 0:
+                return 1
+            else:
+                return 0
+            
+        target_with_effect = {
+            'self' : 'attack',
+            'player_1' : 'damage'
+        }
+            
+    class poke(Event):
+        @staticmethod
+        def trigger_condition(owner:Union['Character', 'Monster'], data:'Data') -> int :
+            if owner.index > 1 and owner.index < 4:
+                return 2
+            else: 
+                return 0
+            
+        target_with_effect = {
+            'self' : 'attack',
+            'player_2' : 'damage'
+        }
 
     def __init__(self, name:str, icon:str, HP:int, key:str|None=None):
         super().__init__(name, icon, HP, key)
+        self.available_events.append(self.poke)
         self.available_events.append(self.stab)
 
     #기본적으로 command가 없음

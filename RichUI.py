@@ -147,15 +147,21 @@ class Battlefield(Box):
             playerindexlist = [1, 2, 3, 4]
             for player in data.players:
                 if player.index in playerindexlist:
+                    #field update
                     table[f"player {player.index}_field"].update(
                         Panel(Align(f"{player.icon}", align="center"), box=box.HEAVY)
                         )
-                    namespace = Group(
-                        player.name,
-                        Align(f"{player.HP}/{player.max_HP}", align="center", style=f"{HPcolor(player.HP, player.max_HP)}"),
-                        "Status"
-                    )
+                    #status update
+                    if not hasattr(player, 'dummy'):
+                        namespace = Group(
+                            player.name,
+                            Align(f"{player.HP}/{player.max_HP}", align="center", style=f"{HPcolor(player.HP, player.max_HP)}"),
+                            player.status
+                        )
+                    else:
+                        namespace = player.name
                     table[f"player {player.index}_namespace"].update(namespace)
+                    #event update
                     table[f"player {player.index}_event"].split_column(
                         *list(self.eventLayoutGen(player, data.eventList))
                     )
@@ -164,7 +170,7 @@ class Battlefield(Box):
             #비어있는 아군의 세부 사항 지정.
             for blank in playerindexlist:
                 table[f"player {blank}_field"].update(" ")
-                table[f"player {blank}_namespace"].update("No player")
+                table[f"player {blank}_namespace"].update("Error: no dummy")
                 table[f"player {blank}_event"].update(" ")
             
             #Monster의 세부 사항 지정.
@@ -175,7 +181,7 @@ class Battlefield(Box):
                 namespace = Group(
                     monster.name,
                     Align(f"{monster.HP}/{monster.max_HP}", align="center", style=f"{HPcolor(monster.HP, monster.max_HP)}"),
-                    "Status"
+                    monster.status
                     )
                 table[f"monster {monster.index}_namespace"].update(namespace)
                 table[f"monster {monster.index}_event"].split_column(

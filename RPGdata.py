@@ -37,14 +37,32 @@ class Data:
     mode : Literal["select", "solve"]
 
     testplayer : Character
+
+    class DummyCharacter(Character):
+        name="Dummy player"
+        icon=" "
+        HP=0
+        max_HP = 0
+        voice=None
+        key=None
+        hascommand = False
+        status = " "
+        #Only added in here
+        dummy = True
+
+        def __init__(self, index=0):
+            self.index = index
+            self.available_events = []
     
     def __init__(self):
         self.mode = "select"
+        #character instance 하나를 testplayer에 저장한다. 디버그용.
         self.testplayer = Character("test player", "@", 30)
         self.testplayer.setVoice()
-        #character instance 하나를 testplayer에 저장한다. 디버그용.
+
+        self.fill_dummy()
         self.generate_testCommands()
-    
+
     def generate_testCommands(self):
         test_inputMessage = SystemCommand("(I)nput", 'i', lambda data: data.writeMessage())
         test_voiceChat = SystemCommand("(V)oice", 'v', lambda data: data.voiceChat(data.testplayer, "뭐라카노?", "_-^-."))
@@ -69,25 +87,39 @@ class Data:
     def event_num(self):
         return len(self.eventList)
     
-    #players의 index 오류를 수정하고, index의 빈 자리를 앞쪽부터 반환한다.
-    def playerIndexCheck(self):
+    #players의 index 오류를 수정하고, 빈 자리는 dummy로 채운다. index의 빈 자리를 앞쪽부터 반환한다.
+    def fill_dummy(self, given_index=None):
         indexlist = [1, 2, 3, 4]
         for player in self.players:
             if not hasattr(player, "index"):
                 player.index = 0
+
+        #수정. given index에 dummy 추가.
+        if given_index != None and given_index in indexlist:
+            self.players.append(self.DummyCharacter(given_index))
             
-            #index가 1,2,3,4 중 하나라면 그 자리는 차 있다. 중복되는 index는 0으로 초기화한다.
-            if player.index in indexlist:
-                indexlist.remove(player.index)
-            else:
-                player.index = 0
-        
+        #초기화. index가 1,2,3,4 중 하나라면 그 자리는 차 있다.
+        else:
+            existing_indexes = {player.index for player in self.players}
+            for index in indexlist:
+                if index not in existing_indexes:
+                    self.players.append(self.DummyCharacter(index))
+    
+    def playerIndexUpdate(self, new_player:'Character'):
         #남아있는 자리 중 가장 앞쪽을 반환한다. 없으면 0을 반환한다.
-        try:
-            return indexlist.pop(0)
-        except IndexError:
-            return 0
+        real_indexes = {player.index for player in self.players if not hasattr(player, 'dummy')}
+        new_player.index = 0
+        for index in [1, 2, 3, 4]:
+            if index not in real_indexes:
+                new_player.index = index
+                break
         
+        for i, instance in enumerate(self.players):
+            if instance.index == new_player.index and hasattr(instance, 'dummy'):
+                self.players.pop(i)
+                del(instance)
+        
+    #commandbox 갱신 시 실행된다.
     def make_commandList(self):
         #asdf
         commandList = {}
@@ -97,46 +129,54 @@ class Data:
             if type(command) == tuple and command[0] != None:
                 commandList.update(dict([command]))
             self.commandList = commandList
-
+    
+    #key 입력 시 실행된다.
     def run_command(self, key:str, mode:str) -> str|tuple|None:
         self.mode = mode
         for entity in self.players + self.monsters + self.testCommands:
             if entity.get_key() == key:
                 if isinstance(entity, Character):
                     if entity.index == 0:
-                        entity.index = self.playerIndexCheck()
+                        self.playerIndexUpdate(entity)
                     elif entity.index in [1, 2, 3, 4]:
                         entity.index = 0
-                        self.playerIndexCheck()
+                        self.fill_dummy(entity.index)
                     self.make_eventList()
                     return None
 
                 elif isinstance(entity, SystemCommand):
-                    event = entity.run_method(self)
-                    return event
+                    output = entity.run_method(self)
+                    self.make_eventList()
+                    return output
         return "No such key!\n"
 
+    #data가 변할 시 불러와져야 한다.
     def make_eventList(self):
+        playereventList = []
         for player in self.players:
             index = player.index
             event = player.get_event(self)
             time = 0
             if event != None and event.speed >= 0:
-                self.eventList.insert(index, event)
+                playereventList.insert(index, event)
                 time += event.speed
                 #time 속성은 여기서만 부여
                 event.time = time
     
+        monstereventlist = []
         for monster in self.monsters:
             event = monster.get_event(self)
-            time = 0
-            if event.speed > 0:
-                time += event.speed
-                for index, event in enumerate(self.eventList):
-                    if event.time > time:
-                        self.eventList.insert(index, event)
-            elif event.speed == 0:
-                self.eventList.append(event)
+            if event != None:
+                event.time = event.speed
+                monstereventlist.append(event)
+        monstereventlist = sorted(monstereventlist, key=lambda event: event.time)
+        for i in range(len(monstereventlist) - 1):
+            monstereventlist[i + 1].time += monstereventlist[i].time
+
+        eventlist = playereventList + monstereventlist
+        eventlist = sorted(eventlist, key=lambda event: event.time)
+        self.eventList = eventlist
+
 
     def process_eventList(self):
         self.mode = "process"
@@ -148,7 +188,10 @@ class Data:
             return text
 
     def voiceChat(self, character: Character, text:str, accent:str):
-        return "chat", character.voice.speakgen(text, accent)
+        if hasattr(character, 'voice'):
+            return "chat", character.voice.speakgen(text, accent)
+        else:
+            return f"{character.name} does not have a voice.\n"
 
     #아군 추가
     def add_player(self, character:Character|None=None, name:str='test player', icon:str='@', HP:int=10, voice:dict|Literal["silent"]|None=None):
@@ -158,6 +201,7 @@ class Data:
         #아니면 새로 생성
         else:
             new_creature = Character(name, icon, HP)
+            self.testplayer = new_creature
 
         #목소리 설정
         if voice == dict:
@@ -166,12 +210,12 @@ class Data:
             pass
         else:
             new_creature.setVoice()
-        #index 설정
-        new_creature.index = self.playerIndexCheck()
+        
         #추가
         self.players.append(new_creature)
-        self.testplayer = new_creature
-        return f"Character \'{self.players[-1].name}\' was added.\n"
+        self.playerIndexUpdate(new_creature)
+
+        return f"Character \'{new_creature.name}\' was added.\n"
 
     #적군 추가
     def add_monster(self, name:str, icon:str, HP:int):
@@ -179,15 +223,18 @@ class Data:
         new_creature = Monster(name, icon, HP)
         #index 설정
         new_creature.index = len(self.monsters) + 1
+        Monster.num += 1
         #추가
         self.monsters.append(new_creature)
-        return f"Monster \'{self.monsters[-1].name}\' was added.\n"
+        return f"Monster \'{new_creature.name}_{Monster.num}\' was added.\n"
 
     #적군 삭제. 가장 오른쪽이 기본값.
     def kill_monster(self, index_in_monsters:int= -1):
         try:
-            text = f"monster \'{self.monsters[-1].name}\' was deleted.\n"
+            monster = self.monsters[index_in_monsters]
+            text = f"monster \'{monster.name}\' was deleted.\n"
             self.monsters.pop(index_in_monsters)
+            del(monster)
             return text
         except IndexError:
             return "no such monster index in monsters\n"
@@ -195,8 +242,11 @@ class Data:
     #아군 삭제. 가장 왼쪽이 기본값.
     def delete_player(self, index_in_players:int= -1):
         try:
-            text = f"p \'{self.players[-1].name}\' was deleted.\n"
+            player = self.players[index_in_players]
+            text = f"p \'{player.name}\' was deleted.\n"
             self.players.pop(index_in_players)
+            self.fill_dummy()
+            del(player)
             return text
         except IndexError:
             return "no such player index in players\n"
@@ -204,10 +254,11 @@ class Data:
     #샘플 이벤트 추가. 기본적으로 맨 뒤에, index가 주어지면 eventList[index]에 추가.
     def add_sampleEvent(self, index:int|None=None):
         new_event = Event(
-            self.testplayer,
+            self.players[-1],
+            self,
             {'self_' : 'attack',
-             'monster_1' : 'damage'},
-            self)
+             'monster_1' : 'damage'}
+            )
         if index == None:
             self.eventList.append(new_event)
         elif type(index) == int:
@@ -222,8 +273,8 @@ class Data:
 #            for effect in self.eventList[index].origins:
 #                keep = effect.execute(self)
 #        if keep == True:
-#            for effect in self.eventList[index].targets:
-#                keep = effect.execute(self)
+        for effect in self.eventList[index].effects:
+            keep = effect.execute(self)
         try:
             self.eventList.pop(index)
             return "last event cleared\n"

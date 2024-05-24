@@ -30,6 +30,7 @@ andrew = Character(
     icon = 'A',
     HP = 12,
     key = 'a',
+    speed= 4,
     command = "(A)ndrew"
 )
 
@@ -38,6 +39,7 @@ brian = Character(
     icon = 'B',
     HP = 10,
     key = 'b',
+    speed = 2,
     command = "(B)rian"
 )
 
@@ -46,6 +48,7 @@ cinnamon = Character(
     icon = 'C',
     HP = 9,
     key = 'c',
+    speed = 3,
     command = "(C)innamon"
 )
 
@@ -54,5 +57,6 @@ dahlia = Character(
     icon = 'D',
     HP = 7,
     key = 'd',
+    speed = 1,
     command = "(D)ahlia"
 )
