@@ -5,7 +5,6 @@ if TYPE_CHECKING:
     from RPGdata import Data
 
 #creature을 target으로 가지는 클래스.
-#effect_type, 
 class Effect:
     #public
     target : 'Creature'    #creature의 instance
@@ -19,8 +18,8 @@ class Effect:
         self.target = target
         self.value = value
 
-#            for coeff, formula in {'atk':atk, 'defence':defence, 'mag':mag, 'mind':mind}.items():
-#                self._value += parse_coeff(coeff, formula)
+#       for coeff, formula in {'atk':atk, 'defence':defence, 'mag':mag, 'mind':mind}.items():
+#           self._value += parse_coeff(coeff, formula)
 
         if effect_type == 'test':
             self._typ = 'test'
@@ -36,6 +35,7 @@ class Effect:
             self._typ = 'fixed'
             self._icon = '⚔'
             self._color = 'bg_attack_yellow'
+            self._content = ''
 
     def get_Icon(self):
         try:
@@ -111,6 +111,7 @@ class Event:
                     typ = typ[0]
                 except IndexError:
                     num = ""
+                    typ = typ[0]
                 if typ == 'self':
                     new_effect = Effect(self.origin, effect)
                     self.effects.append(new_effect)
@@ -141,8 +142,9 @@ class Event:
         self.trigger_condition = callable
 
     def execute_self(self, data:'Data'):
-        for effect in self.effects:
-            effect.execute(data)
+        if self.origin._status != 'dead':
+            for effect in self.effects:
+                effect.execute(data)
 
 class Creature:
     #중립
@@ -156,22 +158,26 @@ class Creature:
         self.key = key
         self._status = "Status"
         self.command : str = f"Blank {self.name} command"
-        self.hascommand : bool = False
         self.available_events : List[Type[Event]]=[]
 
     @property
     def status(self):
-        emoji = ""
-        if 'dead' in self._status:
-            emoji = "dead"
-        elif 'hurt' in self._status:
-            emoji += "hurt"
-        return emoji
+        return self._status
     
     @status.setter
     def status(self, string:str):
-        if string in ['dead']:
-            self._status = string
+        if string == 'dead':
+            self._status = 'dead'
+        elif 'hurt' in string and 'hurt' not in self._status:
+            self._status += 'hurt,'
+
+    def get_status_emoji(self):
+        emoji = ""
+        if 'dead' in self._status:
+            emoji = ":skull:"
+        elif 'hurt' in self._status:
+            emoji += ":drop_of_blood:"
+        return emoji
 
     def add_key(self, key:str):
         self.key = key
@@ -179,9 +185,12 @@ class Creature:
     def get_key(self):
         return self.key
     
+    def has_command(self, mode:str):
+        return False
+    
     #key와 command창의 str로 이루어진 command tuple을 얻는다.
-    def get_command(self):
-        if self.hascommand and self.command != None:
+    def get_command(self, mode:str):
+        if self.has_command(mode) and self.command != None:
             return self.key, self.command
         else:
             return None
@@ -241,6 +250,9 @@ class Monster(Creature):
         self.available_events.append(self.stab)
 
     #기본적으로 command가 없음
+    def has_command(self, mode:str):
+        return False
+
     def add_command(self, string:str):
         self.command = string
 
@@ -259,7 +271,6 @@ class Character(Creature):
         self.index = 0
         super().__init__(name, icon, HP, key)
         self.speed = speed
-        self.hascommand = True
         self.command = command
 
     #player의 특징: 목소리 나옴
@@ -267,6 +278,14 @@ class Character(Creature):
         if voiceset != None:
             self.voiceset = voiceset
         self.voice = voicefunc.voice(**self.voiceset)
+
+    def has_command(self, mode:str):
+        if mode == 'select' and 'dead' not in self.status:
+            return True
+        elif mode == 'process':
+            return False
+        else:
+            return False
 
     #data의 값을 각 eventClass에 순서대로 대입해, 일단 나오면 그 클래스를 반환한다. Override.
     def get_event(self, data:'Data'):
@@ -297,13 +316,16 @@ def get_list_from(string:str, max:int):
                 first = buff[0]
                 last = buff[1]
                 if first.isdecimal() and last.isdecimal():
-                    for i in range(int(first), int(last)):
+                    for i in range(int(first), int(last) + 1):
                         numlist.append(i)
                 elif first == "" and last.isdecimal():
-                    for i in range(1, int(last)):
+                    for i in range(1, int(last) + 1):
                         numlist.append(i)
                 elif first.isdecimal() and last == "":
-                    for i in range(int(first), max):
+                    for i in range(int(first), max + 1):
                         numlist.append(i)
     #중복 제거
     return list(set(numlist))
+
+if __name__ == '__main__':
+    print(get_list_from('2,2:', 4))

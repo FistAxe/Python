@@ -6,15 +6,17 @@ class SystemCommand():
     string : str
     key : str
     testMethod : Callable[[],str|tuple]
-    hascommand : bool = True
     
     def __init__(self, string:str, key:str, testMethod:Callable|None = None):
         self.string = string 
         self.key = key
         self.testMethod = testMethod
 
-    def get_command(self):
-        if self.hascommand and self.string != None:
+    def has_command(self, mode:str):
+        return True
+
+    def get_command(self, mode:str):
+        if self.has_command(mode) and self.string != None:
             return self.key, self.string
         else:
             return None
@@ -34,18 +36,19 @@ class Data:
     isTest : bool = False
     isDialogOn : bool = True
     isBattlefieldOn : bool = True
-    mode : Literal["select", "solve"]
+    mode : Literal["select", "process"]
 
     testplayer : Character
 
     class DummyCharacter(Character):
         name="Dummy player"
         icon=" "
-        HP=0
-        max_HP = 0
+        HP=1
+        max_HP = 1
         voice=None
         key=None
         hascommand = False
+        command = None
         status = " "
         #Only added in here
         dummy = True
@@ -72,6 +75,7 @@ class Data:
         test_kill_monster = SystemCommand("(K)ill monster", 'k', lambda data: data.kill_monster(len(data.monsters) - 1))
         test_add_event = SystemCommand("(E)vent add", 'e', lambda data: data.add_sampleEvent())
         test_clear_event = SystemCommand("(F)inish event", 'f', lambda data: data.clear_event())
+        test_proceed_turn = SystemCommand("(T)urn proceed", 't', lambda data: data.proceed_turn())
         self.testCommands = [
             test_inputMessage,
             test_voiceChat,
@@ -80,7 +84,8 @@ class Data:
             test_add_monster,
             test_kill_monster,
             test_add_event,
-            test_clear_event
+            test_clear_event,
+            test_proceed_turn
         ]
 
     #Event의 수
@@ -118,6 +123,16 @@ class Data:
             if instance.index == new_player.index and hasattr(instance, 'dummy'):
                 self.players.pop(i)
                 del(instance)
+
+    def monsterIndexRefresh(self):
+        new_index = 0
+        for monster in self.monsters:
+            if monster.HP == 0:
+                self.monsters.remove(monster)
+                del(monster)
+            else:
+                new_index += 1
+                monster.index = new_index
         
     #commandbox 갱신 시 실행된다.
     def make_commandList(self):
@@ -125,14 +140,13 @@ class Data:
         commandList = {}
         for entity in self.testCommands + self.players + self.monsters:
             #single command for single entity
-            command : tuple|None = entity.get_command()
+            command : tuple|None = entity.get_command(self.mode)
             if type(command) == tuple and command[0] != None:
                 commandList.update(dict([command]))
             self.commandList = commandList
     
     #key 입력 시 실행된다.
     def run_command(self, key:str, mode:str) -> str|tuple|None:
-        self.mode = mode
         for entity in self.players + self.monsters + self.testCommands:
             if entity.get_key() == key:
                 if isinstance(entity, Character):
@@ -146,7 +160,6 @@ class Data:
 
                 elif isinstance(entity, SystemCommand):
                     output = entity.run_method(self)
-                    self.make_eventList()
                     return output
         return "No such key!\n"
 
@@ -178,8 +191,18 @@ class Data:
         self.eventList = eventlist
 
 
-    def process_eventList(self):
+    def proceed_turn(self):
         self.mode = "process"
+        if self.eventList == []:
+            self.monsterIndexRefresh()
+            for player in self.players:
+                player.index = 0
+            self.fill_dummy()
+            self.make_eventList()
+            self.mode = 'select'
+            return "turn ended\n"
+        else:
+            self.clear_event(0)
 
     def writeMessage(self, text:str='default'):
         if text == 'default':
@@ -214,6 +237,7 @@ class Data:
         #추가
         self.players.append(new_creature)
         self.playerIndexUpdate(new_creature)
+        self.make_eventList()
 
         return f"Character \'{new_creature.name}\' was added.\n"
 
@@ -226,6 +250,7 @@ class Data:
         Monster.num += 1
         #추가
         self.monsters.append(new_creature)
+        self.make_eventList()
         return f"Monster \'{new_creature.name}_{Monster.num}\' was added.\n"
 
     #적군 삭제. 가장 오른쪽이 기본값.
@@ -235,6 +260,7 @@ class Data:
             text = f"monster \'{monster.name}\' was deleted.\n"
             self.monsters.pop(index_in_monsters)
             del(monster)
+            self.make_eventList()
             return text
         except IndexError:
             return "no such monster index in monsters\n"
@@ -247,6 +273,7 @@ class Data:
             self.players.pop(index_in_players)
             self.fill_dummy()
             del(player)
+            self.make_eventList()
             return text
         except IndexError:
             return "no such player index in players\n"
@@ -273,9 +300,8 @@ class Data:
 #            for effect in self.eventList[index].origins:
 #                keep = effect.execute(self)
 #        if keep == True:
-        for effect in self.eventList[index].effects:
-            keep = effect.execute(self)
         try:
+            self.eventList[index].execute_self(self)
             self.eventList.pop(index)
             return "last event cleared\n"
         except IndexError:

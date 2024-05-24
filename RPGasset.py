@@ -3,8 +3,8 @@ from RPGclass import Character, Event
 # coefficient={'type1':'coeff1', 'type2':'coeff2', ... } : value에 수정되는 값. type의 값*coeff 만큼이 value에 더해진다.
 
 #'self' : 자기 자신.
-#'p_i : i번째 아군. i=0일 시 제일 앞.
-#'m_i : i번째 적군. i=0일 시 제일 앞.
+#'player_i : i번째 아군.
+#'monster_i : i번째 적군. i=0일 시 제일 앞.
 #'p_least_attr' : attr이 가장 적은 대상.
 #'p_most_attr' : attr이 가장 큰 대상.
 

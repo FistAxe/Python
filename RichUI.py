@@ -156,10 +156,10 @@ class Battlefield(Box):
                         namespace = Group(
                             player.name,
                             Align(f"{player.HP}/{player.max_HP}", align="center", style=f"{HPcolor(player.HP, player.max_HP)}"),
-                            player.status
+                            player.get_status_emoji()
                         )
                     else:
-                        namespace = player.name
+                        namespace = "empty"
                     table[f"player {player.index}_namespace"].update(namespace)
                     #event update
                     table[f"player {player.index}_event"].split_column(
@@ -175,27 +175,30 @@ class Battlefield(Box):
             
             #Monster의 세부 사항 지정.
             for monster in data.monsters:
+                #field update
                 table[f"monster {monster.index}_field"].update(
                     Panel(Align(f"{monster.icon}", align="center"), box=box.HEAVY)
                     )
+                #status update
                 namespace = Group(
                     monster.name,
                     Align(f"{monster.HP}/{monster.max_HP}", align="center", style=f"{HPcolor(monster.HP, monster.max_HP)}"),
-                    monster.status
+                    monster.get_status_emoji()
                     )
                 table[f"monster {monster.index}_namespace"].update(namespace)
+                #event update
                 table[f"monster {monster.index}_event"].split_column(
                     *list(self.eventLayoutGen(monster, data.eventList))
                 )
-
+            #Info panel 설정
             character_info = Panel("Info")
 
         elif Data == None:
             table = Panel("No Data input")
             character_info = Panel("No Data input")
         else:
-            table = Panel("No Data")
-            character_info = Panel("No Data")
+            table = Panel("Data is not 'Data'")
+            character_info = Panel("Wrong Data")
         
         insidegrid = Layout()
         insidegrid.split_column(
