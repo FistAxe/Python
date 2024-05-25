@@ -167,14 +167,15 @@ class Data:
     def make_eventList(self):
         playereventList = []
         for player in self.players:
-            index = player.index
-            event = player.get_event(self)
-            time = 0
-            if event != None and event.speed >= 0:
-                playereventList.insert(index, event)
-                time += event.speed
-                #time 속성은 여기서만 부여
-                event.time = time
+            if player.index in [1, 2, 3, 4]:
+                index = player.index
+                event = player.get_event(self)
+                time = 0
+                if event != None and event.speed >= 0:
+                    playereventList.insert(index, event)
+                    time += event.speed
+                    #time 속성은 여기서만 부여
+                    event.time = time
     
         monstereventlist = []
         for monster in self.monsters:

@@ -36,23 +36,27 @@ class Effect:
             self._icon = '⚔'
             self._color = 'bg_attack_yellow'
             self._content = ''
+        if effect_type == 'shield':
+            self._typ = 'fixed'
+            self._icon = ':shield:'
+            self._color = 'shield_blue'
 
     def get_Icon(self):
-        try:
+        if hasattr(self, '_icon'):
             return self._icon
-        except:
+        else:
             return "X"
 
     def get_content(self):
-        try:
+        if hasattr(self, '_content'):
             return self._content
-        except ValueError:
+        else:
             return None
             
     def get_color(self):
-        try:
+        if hasattr(self, '_color'):
             return self._color
-        except:
+        else:
             return None
         
     def execute(self, data:'Data'):
@@ -92,10 +96,11 @@ class Event:
 
         if target_with_effect != None:
             self.target_with_effect = target_with_effect
-        self.calculate_speed()
+        self.get_speed()
         self.calculate_effects(data)
 
-    def calculate_speed(self):
+    #기본 속도 = origin의 속도. SubEvent에서 override할 것.
+    def get_speed(self):
         if hasattr(self.origin, 'speed'):
             self.speed = self.origin.speed
         else:
@@ -183,7 +188,10 @@ class Creature:
         self.key = key
 
     def get_key(self):
-        return self.key
+        if 'dead' not in self.status:
+            return self.key
+        else:
+            return None
     
     def has_command(self, mode:str):
         return False
@@ -215,8 +223,6 @@ class Monster(Creature):
     index : int
     #지금까지 생성된 monster의 수. 클래스 변수.
     num : int = 0
-
-    monster_events = []
         
     class stab(Event):
         @staticmethod
@@ -230,6 +236,9 @@ class Monster(Creature):
             'self' : 'attack',
             'player_1' : 'damage'
         }
+
+        def get_speed(self):
+            return 5
             
     class poke(Event):
         @staticmethod
@@ -244,10 +253,14 @@ class Monster(Creature):
             'player_2' : 'damage'
         }
 
+        def get_speed(self):
+            return 7
+
+    skillList : Event = [stab, poke]
+
     def __init__(self, name:str, icon:str, HP:int, key:str|None=None):
         super().__init__(name, icon, HP, key)
-        self.available_events.append(self.poke)
-        self.available_events.append(self.stab)
+        self.available_events.extend(self.skillList)
 
     #기본적으로 command가 없음
     def has_command(self, mode:str):
@@ -267,11 +280,13 @@ class Character(Creature):
         'sec' : 0.13
     }
 
-    def __init__(self, name:str, icon:str, HP:int, speed:int=1, key:str|None=None, command:str|None=None):
+    def __init__(self, name:str, icon:str, HP:int, speed:int=1, key:str|None=None, command:str|None=None, skillList:List[Event]|None = None):
         self.index = 0
         super().__init__(name, icon, HP, key)
         self.speed = speed
         self.command = command
+        if skillList != None:
+            self.available_events = skillList
 
     #player의 특징: 목소리 나옴
     def setVoice(self, voiceset:dict|None=None):
@@ -291,7 +306,7 @@ class Character(Creature):
     def get_event(self, data:'Data'):
         for eventClass in self.available_events:
             if eventClass.trigger_condition(self, data):
-                event = eventClass(data)
+                event = eventClass(self, data)
                 return event
         return None
         
@@ -302,14 +317,17 @@ def get_list_from(string:str, max:int):
     numlist = []
     #"monster_" 형 : 전체 범위
     if string == "":
-        numlist = range(1,max)
+        numlist = range(1, max + 1)
     #"monster_a,b" 형 : 상세 범위
     else:
         buf = string.split(",")
         for num in buf:
             #"monster_i" 형 : i 번째 index.
             if num.isdecimal():
-                numlist.append(int(num))
+                intnum = int(num)
+                if intnum < 0:
+                    intnum = max + intnum + 1
+                numlist.append(intnum)
             #"monster_i:j" 형 : i~j 번째 index.
             elif ':' in num:
                 buff = num.split(':')

@@ -14,7 +14,8 @@ colorDict = {
     'bg_attack_yellow' : '#202003',
     'HP_green' : '#2DD32D',
     'HP_yellow': '#D3D32D',
-    'HP_red' : '#911F1F'
+    'HP_red' : '#911F1F',
+    'shield_blue' : '#0D2D46'
 }
 
 def HPcolor(HP:int, max_HP:int):
@@ -37,20 +38,20 @@ class Battlefield(Box):
     #Panel(get_battlefield())
 
     #세로 축: 하나의 개체.
-    class CharacterLayout(Layout):
+    class CreatureLayout(Layout):
         def add_owner(self, owner:Creature):
             self.owner = owner
 
     #각 칸: 하나의 effect.
     class EffectLayout(Layout):
-        def add_effect(self, effect:Effect):
-            self.effect = effect
+        effect : Effect
 
         def effectPanelgen(self):
             if hasattr(self, 'effect'):
                 icon = self.effect.get_Icon()
                 if icon == None:
                     icon = ""
+                
                 content = self.effect.get_content()
                 if content == None:
                     content = ""
@@ -67,6 +68,7 @@ class Battlefield(Box):
                 try:
                     color_code = colorDict[color]
                 except KeyError:
+                    color_code = colorDict["background"]
                     print("No such color code!")
 
                 #event 한 칸 반환
@@ -83,7 +85,7 @@ class Battlefield(Box):
 
     def creatureLayoutGen(self, iterable:List[Creature]):
         for entity in iterable:
-            daughterlayout = self.CharacterLayout(name=f"{entity.name}")
+            daughterlayout = self.CreatureLayout(name=f"{entity.name}")
             daughterlayout.add_owner(entity)
             yield daughterlayout
 
@@ -96,9 +98,20 @@ class Battlefield(Box):
                 daughterlayout.update("")
                 for effect in event.effects:
                     if effect.target == owner:
-                        daughterlayout.add_effect(effect)
+                        daughterlayout.effect = effect
                         daughterlayout.effectPanelgen()
                 yield daughterlayout
+
+    def timeLayoutGen(self, eventList:List[Event]):
+        if eventList == []:
+            yield Layout("vs")
+        else:
+            for event in eventList:
+                daughterlayout = Layout(" ")
+                if hasattr(event, 'time'):
+                    daughterlayout.update(Align((f"[bold blue]{event.time}[/bold blue]"), vertical='middle'))
+                yield daughterlayout
+
 
     def __init__(self, data:Data=None):
         #data 제대로 들어옴
@@ -109,7 +122,7 @@ class Battlefield(Box):
                 #왼쪽, players
                 Layout(name="playerside"),
                 #중간, "vs"
-                Layout(Align("vs", align="center", vertical="middle"), name="middle"),
+                Layout(name="middle"),
                 #오른쪽, monsters
                 Layout(name="monsterside")
             )
@@ -142,6 +155,12 @@ class Battlefield(Box):
                     Layout(name=f"{monsterlayout.name}_field", size=3),
                     Layout(name=f"{monsterlayout.name}_namespace",size=3)
                 )
+
+            table["middle"].split_column(
+                Layout(name="middle_event"),
+                Layout(" ", name="middle_field", size=3),
+                Layout(" ", name="middle_namespace", size=3)
+            )
 
             #player의 세부 사항 지정.
             playerindexlist = [1, 2, 3, 4]
@@ -176,7 +195,7 @@ class Battlefield(Box):
             #Monster의 세부 사항 지정.
             for monster in data.monsters:
                 #field update
-                table[f"monster {monster.index}_field"].update(
+                table[f"{monster.name}_field"].update(
                     Panel(Align(f"{monster.icon}", align="center"), box=box.HEAVY)
                     )
                 #status update
@@ -185,11 +204,16 @@ class Battlefield(Box):
                     Align(f"{monster.HP}/{monster.max_HP}", align="center", style=f"{HPcolor(monster.HP, monster.max_HP)}"),
                     monster.get_status_emoji()
                     )
-                table[f"monster {monster.index}_namespace"].update(namespace)
+                table[f"{monster.name}_namespace"].update(namespace)
                 #event update
-                table[f"monster {monster.index}_event"].split_column(
+                table[f"{monster.name}_event"].split_column(
                     *list(self.eventLayoutGen(monster, data.eventList))
                 )
+
+            table["middle_event"].split_column(
+                *list(self.timeLayoutGen(data.eventList))
+            )
+
             #Info panel 설정
             character_info = Panel("Info")
 
