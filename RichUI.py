@@ -32,7 +32,7 @@ def HPcolor(HP:int, max_HP:int):
 
 class Box(Panel):
     def __init__(self, update="Box called without its renderable", name:str="Box"):
-        super().__init__(update, title=name, title_align="left")
+        super().__init__(update, title=f"[bold italic]{name}[/bold italic]", title_align="left")
 
 class Battlefield(Box):
     #Panel(get_battlefield())
@@ -50,7 +50,7 @@ class Battlefield(Box):
             if hasattr(self, 'effect'):
                 icon = self.effect.get_Icon()
                 if icon == None:
-                    icon = ""
+                    icon = "X"
                 
                 content = self.effect.get_content()
                 if content == None:
@@ -217,9 +217,12 @@ class Battlefield(Box):
             #Info panel 설정
             character_info = Panel("Info")
 
-        elif Data == None:
-            table = Panel("No Data input")
-            character_info = Panel("No Data input")
+        elif data == None:
+            table = Panel("Data is 'None'")
+            character_info = Panel("Data is 'None'")
+        elif type(data) == str:
+            table = Panel(f"{data}")
+            character_info = Panel(" ")
         else:
             table = Panel("Data is not 'Data'")
             character_info = Panel("Wrong Data")

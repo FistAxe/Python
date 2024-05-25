@@ -34,8 +34,8 @@ class Main:
         HEIGHT = terminalSize.lines
         self.ui.resize(WIDTH, HEIGHT)
         
-#종료 후 입력 버퍼 초기화.
 def clear_terminal_buffer():
+    '''종료 후 입력 버퍼 초기화.'''
     import os
     if os.name == 'nt':
         import msvcrt
@@ -52,8 +52,8 @@ if __name__ == "__main__":
     #아직 만드는 중
     main.data.isTest = True
 
-    #Makes Layout() from present main.ui
     def layoutgen():
+        '''Makes Layout() from present main.ui.'''
         return main.ui.layoutgen()
 
     with Live(layoutgen(), console=main.ui, auto_refresh=False) as live:
@@ -66,11 +66,13 @@ if __name__ == "__main__":
         
         #앞으로 화면 갱신 시 이걸 쓸 거임.
         def updateUI():
+            '''reset_terminal_size() + update layoutgen()'''
             #terminal 크기 갱신하고,
             main.reset_terminal_size()
             #새 layout 생성해서 깔기
             live.update(layoutgen(), refresh=True)
         #이렇게.
+        main.ui.bwrite("Press Any key to start")
         updateUI()
 
         input_counter = 0
@@ -98,23 +100,24 @@ if __name__ == "__main__":
             elif not user_input.isascii():
                 main.ui.dwrite("Not ASCII! (한/영 키 확인)\n")
 
+            elif input_counter == 0:
+                input_counter += 1
+                pass
+
             #영어 키보드
             else:
-                try:
-                    #log를 가져온다.
-                    output = main.data.run_command(user_input, main.screenmode)
-                    #일반 메시지
-                    if isinstance(output, str):
-                        main.ui.dwrite(output)
-                    #실시간 갱신 메시지
-                    elif isinstance(output, tuple) and len(output) > 0 and output[0] == 'chat':
-                        #char의 대상은 Generator로, sleep()이 걸려 있다.
-                        for char in output[1]:
-                            main.ui.dwrite(char)
-                            #한 글자마다 현재 dialog 내용으로 새 layout을 출력한다.
-                            updateUI()
-                except KeyError:
-                    pass
+                #log를 가져온다.
+                output = main.data.run_command(user_input, main.screenmode)
+                #일반 메시지
+                if isinstance(output, str):
+                    main.ui.dwrite(output)
+                #실시간 갱신 메시지
+                elif isinstance(output, tuple) and len(output) > 0 and output[0] == 'chat':
+                    #char의 대상은 Generator로, sleep()이 걸려 있다.
+                    for char in output[1]:
+                        main.ui.dwrite(char)
+                        #한 글자마다 현재 dialog 내용으로 새 layout을 출력한다.
+                        updateUI()
 
             #after event, refreshes with debugging print
             if user_input != None:

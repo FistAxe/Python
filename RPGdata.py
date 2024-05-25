@@ -92,8 +92,8 @@ class Data:
     def event_num(self):
         return len(self.eventList)
     
-    #players의 index 오류를 수정하고, 빈 자리는 dummy로 채운다. index의 빈 자리를 앞쪽부터 반환한다.
     def fill_dummy(self, given_index=None):
+        '''players의 index 오류를 수정하고, 빈 자리는 dummy로 채운다. index가 주어지면 index에만 채운다.'''
         indexlist = [1, 2, 3, 4]
         for player in self.players:
             if not hasattr(player, "index"):
@@ -111,7 +111,7 @@ class Data:
                     self.players.append(self.DummyCharacter(index))
     
     def playerIndexUpdate(self, new_player:'Character'):
-        #남아있는 자리 중 가장 앞쪽을 반환한다. 없으면 0을 반환한다.
+        '''남아있는 자리 중 가장 앞쪽을 반환한다. 없으면 0을 반환한다.'''
         real_indexes = {player.index for player in self.players if not hasattr(player, 'dummy')}
         new_player.index = 0
         for index in [1, 2, 3, 4]:
@@ -125,6 +125,7 @@ class Data:
                 del(instance)
 
     def monsterIndexRefresh(self):
+        '''monsters 중 HP가 0인 개체를 제거한다. 아니면 index = 1부터 재배열한다.'''
         new_index = 0
         for monster in self.monsters:
             if monster.HP == 0:
@@ -134,9 +135,8 @@ class Data:
                 new_index += 1
                 monster.index = new_index
         
-    #commandbox 갱신 시 실행된다.
     def make_commandList(self):
-        #asdf
+        '''commandbox 갱신 시 실행된다. get_command의 결과를 commandList에 추가한다.'''
         commandList = {}
         for entity in self.testCommands + self.players + self.monsters:
             #single command for single entity
@@ -165,6 +165,7 @@ class Data:
 
     #data가 변할 시 불러와져야 한다.
     def make_eventList(self):
+        '''players와 monsters에서 get_event를 수행해, event에 time을 부여하고 eventList에 추가한다.'''
         playereventList = []
         for player in self.players:
             if player.index in [1, 2, 3, 4]:

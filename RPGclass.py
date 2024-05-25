@@ -1,5 +1,6 @@
 import voicefunc
 from typing import Literal, List, Callable, TYPE_CHECKING, Union, Type, Dict
+from rich.align import Align
 
 if TYPE_CHECKING:
     from RPGdata import Data
@@ -16,7 +17,7 @@ class Effect:
 
     def __init__(self, target:'Creature', effect_type, value:int|None=None):
         self.target = target
-        self.value = value
+        self.value = 0 if value == None else value
 
 #       for coeff, formula in {'atk':atk, 'defence':defence, 'mag':mag, 'mind':mind}.items():
 #           self._value += parse_coeff(coeff, formula)
@@ -38,8 +39,10 @@ class Effect:
             self._content = ''
         if effect_type == 'shield':
             self._typ = 'fixed'
-            self._icon = ':shield:'
+            self._icon = '[bold]:blue_square:[/bold]'
             self._color = 'shield_blue'
+            self.value += 10
+            self._content = f"[b blue]{'+' if self.value > 0 else '' }{self.value}[/b blue]"
 
     def get_Icon(self):
         if hasattr(self, '_icon'):
@@ -69,10 +72,10 @@ class Effect:
         else:
             return True
 
-#이벤트. 원인과 효과(들), 대상과 효과(들)을 가진다.
-#[(원인 1, 효과 1), (원인 2, 효과 2) ... ] -> [(대상 1, 효과 1), (대상 2, 효과 2) ... ]
+
 class Event:
-    #각 effect는 index를 가진 creature 하나를 보유한다!
+    '''이벤트. origin, speed, 대상과 효과(들)을 가진다.\n
+        각 effect는 index를 가진 creature 하나를 보유한다.'''
     effects : List[Effect]
     speed : int = 0
     origin : Union['Character', 'Monster']
@@ -80,16 +83,17 @@ class Event:
         "enemy_1" : "damage_7"
     }
         
-    #발동 조건은? -> 우선순위
-    #기본값은 화면 상에 있으면 True를 반환하는 트리거.
+
     @staticmethod
     def trigger_condition(owner:Union['Character', 'Monster'], data:'Data') -> int :
+        '''Override할 것. 정수 우선순위를 반환한다. 기본값은 owner가 화면 상에 있으면 1을 반환.'''
         if owner.index > 0:
             return 1
         else:
             return 0
         
-    def __init__(self, origin:'Creature', data:'Data', target_with_effect:dict=None):
+    def __init__(self, origin:'Creature', data:'Data', target_with_effect:dict|None=None):
+        '''Event 주인, 전체 data, dict 형식의 target과 effect.'''
         self.effects = []
         if origin != None:
             self.origin = origin
@@ -99,8 +103,9 @@ class Event:
         self.get_speed()
         self.calculate_effects(data)
 
-    #기본 속도 = origin의 속도. SubEvent에서 override할 것.
+
     def get_speed(self):
+        '''SubEvent에서 override할 것. 기본 속도는 origin의 속도.'''
         if hasattr(self.origin, 'speed'):
             self.speed = self.origin.speed
         else:
@@ -196,8 +201,9 @@ class Creature:
     def has_command(self, mode:str):
         return False
     
-    #key와 command창의 str로 이루어진 command tuple을 얻는다.
+
     def get_command(self, mode:str):
+        '''key와 command창의 str로 이루어진 command tuple을 얻는다.'''
         if self.has_command(mode) and self.command != None:
             return self.key, self.command
         else:
@@ -206,8 +212,9 @@ class Creature:
     def add_eventClass(self, eventClass:Type[Event]):
         self.available_events.append(eventClass)
 
-    #data의 값을 각 eventClass에 순서대로 대입해, 일단 나오면 그 클래스를 반환한다.
+
     def get_event(self, data:'Data'):
+        '''data의 값을 자신의 eventClass에 순서대로 대입해, 일단 나오면 그 클래스를 반환한다.'''
         for eventClass in self.available_events:
             if eventClass.trigger_condition(self, data):
                 event = eventClass(self, data)
@@ -219,10 +226,12 @@ class Creature:
 
 class Monster(Creature):
     typ = 'monster'
-    #monster의 특징: 화면에 나옴
+    
     index : int
-    #지금까지 생성된 monster의 수. 클래스 변수.
+    '''monster의 특징: 화면에 나옴'''
+
     num : int = 0
+    '''지금까지 생성된 monster의 수. 클래스 변수.'''
         
     class stab(Event):
         @staticmethod
@@ -262,8 +271,8 @@ class Monster(Creature):
         super().__init__(name, icon, HP, key)
         self.available_events.extend(self.skillList)
 
-    #기본적으로 command가 없음
     def has_command(self, mode:str):
+        '''기본적으로 command가 없음'''
         return False
 
     def add_command(self, string:str):
@@ -271,14 +280,15 @@ class Monster(Creature):
 
 class Character(Creature):
     typ = 'character'
-    #player의 특징: 4명까지 화면에 나옴
     index : Literal[0, 1, 2, 3, 4]
+    '''player의 특징: 4명까지 화면에 나옴'''
     voiceset : dict = {
         'high' : 740,
         'middle' : 455,
         'low' : 350,
         'sec' : 0.13
     }
+    '''high, middle, low, sec'''
 
     def __init__(self, name:str, icon:str, HP:int, speed:int=1, key:str|None=None, command:str|None=None, skillList:List[Event]|None = None):
         self.index = 0
