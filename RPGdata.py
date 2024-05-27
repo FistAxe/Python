@@ -1,7 +1,7 @@
 from typing import Literal, Callable
 from RPGclass import Event, Monster, Character
 
-#Command의 뒤에 dataMethod와 필요한 매개변수를 붙여, key 입력 시 시행한다.
+#Command의 뒤에 dataMethod와 필요한 매개변수를 lambda로 붙여, key 입력 시 시행한다.
 class SystemCommand():
     string : str
     key : str
@@ -71,7 +71,7 @@ class Data:
         test_voiceChat = SystemCommand("(V)oice", 'v', lambda data: data.voiceChat(data.testplayer, "뭐라카노?", "_-^-."))
         test_add_player = SystemCommand("(P)layer add", 'p', lambda data: data.add_player(name=f"player {len(data.players) + 1}", icon="A", HP=20))
         test_delete_player = SystemCommand("(R)id player", 'r', lambda data: data.delete_player(len(data.players) - 1))
-        test_add_monster = SystemCommand("(M)onster add", 'm', lambda data: data.add_monster(f"monster {len(data.monsters) + 1}", "M", 10))
+        test_add_monster = SystemCommand("(M)onster add", 'm', lambda data: data.add_monster(name=f"dummymon", icon="M", HP=10))
         test_kill_monster = SystemCommand("(K)ill monster", 'k', lambda data: data.kill_monster(len(data.monsters) - 1))
         test_add_event = SystemCommand("(E)vent add", 'e', lambda data: data.add_sampleEvent())
         test_clear_event = SystemCommand("(F)inish event", 'f', lambda data: data.clear_event())
@@ -87,10 +87,6 @@ class Data:
             test_clear_event,
             test_proceed_turn
         ]
-
-    #Event의 수
-    def event_num(self):
-        return len(self.eventList)
     
     def fill_dummy(self, given_index=None):
         '''players의 index 오류를 수정하고, 빈 자리는 dummy로 채운다. index가 주어지면 index에만 채운다.'''
@@ -192,7 +188,6 @@ class Data:
         eventlist = sorted(eventlist, key=lambda event: event.time)
         self.eventList = eventlist
 
-
     def proceed_turn(self):
         self.mode = "process"
         if self.eventList == []:
@@ -205,6 +200,10 @@ class Data:
             return "turn ended\n"
         else:
             self.clear_event(0)
+            for event in self.eventList:
+                if event.effects == [] or event.origin.isDead():
+                    self.eventList.remove(event)
+                    del(event)
 
     def writeMessage(self, text:str='default'):
         if text == 'default':
@@ -244,16 +243,28 @@ class Data:
         return f"Character \'{new_creature.name}\' was added.\n"
 
     #적군 추가
-    def add_monster(self, name:str, icon:str, HP:int):
-        #생성
-        new_creature = Monster(name, icon, HP)
+    def add_monster(self, monster:Monster|None=None, name:str='monster', icon:str='M', HP:int=10):
+        #템플릿이 있으면 복사
+        if monster != None:
+            new_creature = monster
+        #아니면 새로 생성
+        else:
+            new_creature = Monster(name, icon, HP)
+            self.testplayer = new_creature
+        
         #index 설정
         new_creature.index = len(self.monsters) + 1
         Monster.num += 1
         #추가
+        counter = 1
+        name_exists = any(new_creature.name in monster.name for monster in self.monsters)
+        while name_exists:
+            new_creature.name = f"{new_creature.name} {counter}"
+            name_exists = any(new_creature.name in monster.name for monster in self.monsters)
+            counter += 1
         self.monsters.append(new_creature)
         self.make_eventList()
-        return f"Monster \'{new_creature.name}_{Monster.num}\' was added.\n"
+        return f"Monster \'{new_creature.name}\' was added.\n"
 
     #적군 삭제. 가장 오른쪽이 기본값.
     def kill_monster(self, index_in_monsters:int= -1):

@@ -1,4 +1,4 @@
-from RPGclass import Character, Event, Monster
+from RPGclass import Character, Creature, Event, Monster, Effect
 from RPGdata import Data
 
 # coefficient={'type1':'coeff1', 'type2':'coeff2', ... } : value에 수정되는 값. type의 값*coeff 만큼이 value에 더해진다.
@@ -29,6 +29,71 @@ from RPGdata import Data
 #    {'least' : "heal_"}
 #)
 
+#SubEffect 추가
+'''
+class SubEffect(Effect):
+    def __init___(self, target:Creature, value:int):
+        self.target = target
+        self.value = 0 if value == None else value
+
+#       for coeff, formula in {'atk':atk, 'defence':defence, 'mag':mag, 'mind':mind}.items():
+#           self._value += parse_coeff(coeff, formula)
+
+        self._typ = 'fixed' or 'position'
+        self._icon = '<single character>'
+        self.value += coefficient
+        self._content = f"[b red]{self.value}[/b red]"
+        self._color = '<color name>'
+
+    def execute(self, data:Data):
+        if type(self.value) == int:
+            self.target.HP += self.value
+        return self.target.isDead()
+'''
+class Shield(Effect):
+    @property
+    def _content(self):
+        return f"[b blue]{'+' if self.value > 0 else '' }{self.value}[/b blue]"
+    
+
+    def __init__(self, target: Creature, value: int | None = None):
+        self.target = target
+        self.value = 0 if value == None else value
+        self.target.status = 'shield'
+        self.target.shield_effect = self
+
+        self._typ = 'fixed'
+        self._icon = '[bold]:blue_square:[/bold]'
+        self._color = 'shield_blue'
+        self.value += 10
+
+    def calculate_shield(self, damage:int):
+        self.value += damage
+        if self.value <= 0:
+            self.execute()
+            return self.value
+        else:
+            return 0
+
+    def execute(self, data):
+        self.target.status.remove('shield')
+        delattr(self.target, 'shield_effect')
+
+class ReadyShield(Effect):
+    def __init__(self, target: Creature, value: int | None = None):
+        self.target = target
+        self.value = 0 if value == None else value
+
+        self._typ = 'fixed'
+        self._icon = '[bold]:blue_square:[/bold]'
+        self._color = 'shield_blue'
+        self.value += 10
+        self._content = f"[b blue]{'+' if self.value > 0 else '' }{self.value}[/b blue]"
+
+    def execute(self, data: Data):
+        data.eventList.append(Buff(self.target, data, {'self' : Shield}))
+
+
 #trigger 추가
 def index_trigger(owner:Character|Monster, index:int):
     return 1 if owner.index == index else 0
@@ -47,6 +112,12 @@ class SubEvent(Event):
             ...
         }
 '''
+class Buff(Event):
+    target_with_effect = {}
+
+    def __init__(self, origin: Creature, data: Data, target_with_effect: dict | None = None):
+        super().__init__(origin, data, target_with_effect)
+        self.time = " "
 
 #SubMonster 추가
 '''
@@ -65,17 +136,68 @@ class SubMonster(Monster):
 
 '''
 
+class Goblin(Monster):
+    name = 'goblin'
+    icon = 'G'
+    HP = 6
+
+    class stab(Event):
+        original_speed = 1
+
+        @staticmethod
+        def trigger_condition(owner:Monster, data:'Data') -> int :
+            return index_trigger(owner, 1)
+            
+        target_with_effect = {
+            'self' : 'attack',
+            'player_1' : 'damage'
+        }
+            
+    class poke(Event):
+        original_speed = 4
+
+        @staticmethod
+        def trigger_condition(owner:Monster, data:'Data') -> int :
+            if owner.index > 1 and owner.index < 4:
+                return 2
+            else: 
+                return 0
+            
+        target_with_effect = {
+            'self' : 'attack',
+            'player_2' : 'damage'
+        }
+
+    skillList = [stab, poke]
+
+    def __init__(self, key: str | None = None):
+        super().__init__(self.name, self.icon, self.HP, key)
+
+    
 #Character 추가
 class A_Protect(Event):
+    original_speed = -3
+
     @staticmethod
     def trigger_condition(owner: Character | Monster, data: Data) -> int:
         return index_trigger(owner, 1)
    
     target_with_effect = {
-        'self' : 'shield'
+        'self' : ReadyShield
     }
 
+    def __init__(self, origin: Creature, data: Data):
+        self.effects = []
+        if origin != None:
+            self.origin = origin
+        self.set_speed()
+        #계수 추가 필요
+        new_effect = ReadyShield(origin)
+        self.effects.append(new_effect)
+
 class A_SingleHit(Event):
+    original_speed = 2
+
     @staticmethod
     def trigger_condition(owner: Character | Monster, data: Data) -> int:
         return index_trigger(owner, 2)
@@ -86,6 +208,8 @@ class A_SingleHit(Event):
     }
 
 class A_MultiHit(Event):
+    original_speed = 4
+
     @staticmethod
     def trigger_condition(owner: Character | Monster, data: Data) -> int:
         return index_trigger(owner, 3)
@@ -96,6 +220,8 @@ class A_MultiHit(Event):
     }
 
 class A_Backup(Event):
+    original_speed = 6
+
     @staticmethod
     def trigger_condition(owner: Character | Monster, data: Data) -> int:
         return index_trigger(owner, 4)

@@ -3,7 +3,7 @@ from RPGdata import Data
 from RichUI import UI
 from rich.live import Live
 from typing import Literal
-from RPGasset import andrew, brian, cinnamon, dahlia
+from RPGasset import andrew, brian, cinnamon, dahlia, Goblin
 
 terminalSize = os.get_terminal_size()
 WIDTH = terminalSize.columns
@@ -25,6 +25,9 @@ class Main:
         self.data.add_player(brian)
         self.data.add_player(cinnamon)
         self.data.add_player(dahlia)
+
+        for _ in range(3):
+            self.data.add_monster(Goblin())
 
 
     def reset_terminal_size(self):

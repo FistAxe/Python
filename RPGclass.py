@@ -1,6 +1,5 @@
 import voicefunc
 from typing import Literal, List, Callable, TYPE_CHECKING, Union, Type, Dict
-from rich.align import Align
 
 if TYPE_CHECKING:
     from RPGdata import Data
@@ -15,34 +14,28 @@ class Effect:
     _content : str
     _color : str
 
-    def __init__(self, target:'Creature', effect_type, value:int|None=None):
+    def __init__(self, target:'Creature', effect_type:str|None=None, value:int|None=None):
         self.target = target
         self.value = 0 if value == None else value
 
 #       for coeff, formula in {'atk':atk, 'defence':defence, 'mag':mag, 'mind':mind}.items():
 #           self._value += parse_coeff(coeff, formula)
-
-        if effect_type == 'test':
+        #디버그용 기본 effect들.
+        if effect_type == 'test' or None:
             self._typ = 'test'
             self._icon = ':gear:'
             self._color = 'bg_test_yellow'
-        if effect_type == 'damage':
+        elif effect_type == 'damage':
             self._typ = 'fixed'
             self._icon = ':drop_of_blood:'
             self.value = -7
             self._content = f"[b red]{self.value}[/b red]"
             self._color = 'bg_damage_red'
-        if effect_type == 'attack':
+        elif effect_type == 'attack':
             self._typ = 'fixed'
             self._icon = '⚔'
             self._color = 'bg_attack_yellow'
             self._content = ''
-        if effect_type == 'shield':
-            self._typ = 'fixed'
-            self._icon = '[bold]:blue_square:[/bold]'
-            self._color = 'shield_blue'
-            self.value += 10
-            self._content = f"[b blue]{'+' if self.value > 0 else '' }{self.value}[/b blue]"
 
     def get_Icon(self):
         if hasattr(self, '_icon'):
@@ -64,24 +57,23 @@ class Effect:
         
     def execute(self, data:'Data'):
         if type(self.value) == int:
-            self.target.HP += self.value
-        if self.target.HP <= 0:
-            self.target.HP = 0
-            self.target.status = 'dead'
-            return False
-        else:
-            return True
-
+            self.target.calculate_HP(self.value)
+            return self.target.isDead()
 
 class Event:
-    '''이벤트. origin, speed, 대상과 효과(들)을 가진다.\n
-        각 effect는 index를 가진 creature 하나를 보유한다.'''
+    '''이벤트. original_speed, target_with_effect를 가진다.\n
+        초기화 시 origin, data를 필요로 하며, speed, effects[]가 계산되어 추가된다.'''
     effects : List[Effect]
+    original_speed : int = 0
+    '''이벤트 속도 보정치. owner의 속도와 같이 set_speed에서 계산해 speed를 구한다.'''
     speed : int = 0
+    '''실제 이용되는 속도.'''
     origin : Union['Character', 'Monster']
+    '''이벤트의 원인.'''
     target_with_effect:Dict[str, str]={
         "enemy_1" : "damage_7"
     }
+    '''{ '대상1 str' : '효과1 str', ...}'''
         
 
     @staticmethod
@@ -100,14 +92,16 @@ class Event:
 
         if target_with_effect != None:
             self.target_with_effect = target_with_effect
-        self.get_speed()
+        self.set_speed()
         self.calculate_effects(data)
 
 
-    def get_speed(self):
+    def set_speed(self):
         '''SubEvent에서 override할 것. 기본 속도는 origin의 속도.'''
         if hasattr(self.origin, 'speed'):
-            self.speed = self.origin.speed
+            self.speed = self.origin.speed + self.original_speed
+            if self.speed < 0:
+                self.speed = 0
         else:
             self.speed = 0
 
@@ -123,7 +117,7 @@ class Event:
                     num = ""
                     typ = typ[0]
                 if typ == 'self':
-                    new_effect = Effect(self.origin, effect)
+                    new_effect = self.make_effect(self.origin, effect)
                     self.effects.append(new_effect)
                     value = new_effect.value
                     pass
@@ -136,23 +130,32 @@ class Event:
                     for target_index in target_list:
                         for player in data.players:
                             if player.index in [1, 2, 3, 4] and player.index == target_index:
-                                new_effect = Effect(player, effect, value)
+                                new_effect = self.make_effect(player, effect, value)
                                 self.effects.append(new_effect)
                 elif typ == 'monster':
                     max_index = len(data.monsters)
                     target_list = get_list_from(num, max_index)
                     for index in target_list:
                         try:
-                            new_effect = Effect(data.monsters[index - 1], effect, value)
+                            new_effect = self.make_effect(data.monsters[index - 1], effect, value)
                             self.effects.append(new_effect)
                         except IndexError:
                             pass
+    
+    def make_effect(self, player:'Creature', effect:Effect|str, value:int|None=None):
+        '''Effect의 instance를 반환한다.'''
+        if type(effect) is str:
+            return Effect(player, effect, value)
+        elif issubclass(effect, Effect):
+            return effect(player, value)
+        else:
+            raise TypeError
 
     def change_trigger(self, callable:Callable|None):
         self.trigger_condition = callable
 
     def execute_self(self, data:'Data'):
-        if self.origin._status != 'dead':
+        if 'dead' not in self.origin._status:
             for effect in self.effects:
                 effect.execute(data)
 
@@ -166,7 +169,7 @@ class Creature:
         self.HP = self.max_HP = HP
         self.speed = 1
         self.key = key
-        self._status = "Status"
+        self._status = []
         self.command : str = f"Blank {self.name} command"
         self.available_events : List[Type[Event]]=[]
 
@@ -177,17 +180,27 @@ class Creature:
     @status.setter
     def status(self, string:str):
         if string == 'dead':
-            self._status = 'dead'
+            self._status = ['dead']
         elif 'hurt' in string and 'hurt' not in self._status:
-            self._status += 'hurt,'
+            self._status.append('hurt')
+        elif 'shield' in string and 'shield' not in self._status:
+            self._status.append('shield')
 
-    def get_status_emoji(self):
-        emoji = ""
-        if 'dead' in self._status:
-            emoji = ":skull:"
-        elif 'hurt' in self._status:
-            emoji += ":drop_of_blood:"
-        return emoji
+    def calculate_HP(self, damage:int):
+        '''직후 isDead() 호출을 권장.'''
+        if hasattr(self, 'shield_effect'):
+            damage = self.shield_effect.calculate_shield(damage)
+        self.HP += damage
+    
+    def isDead(self):
+        if 'dead' in self.status:
+            return True
+        elif self.HP <= 0:
+            self.HP = 0
+            self.status = 'dead'
+            return True
+        else:
+            return False
 
     def add_key(self, key:str):
         self.key = key
@@ -201,7 +214,6 @@ class Creature:
     def has_command(self, mode:str):
         return False
     
-
     def get_command(self, mode:str):
         '''key와 command창의 str로 이루어진 command tuple을 얻는다.'''
         if self.has_command(mode) and self.command != None:
@@ -211,7 +223,6 @@ class Creature:
 
     def add_eventClass(self, eventClass:Type[Event]):
         self.available_events.append(eventClass)
-
 
     def get_event(self, data:'Data'):
         '''data의 값을 자신의 eventClass에 순서대로 대입해, 일단 나오면 그 클래스를 반환한다.'''

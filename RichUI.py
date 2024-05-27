@@ -29,6 +29,18 @@ def HPcolor(HP:int, max_HP:int):
             f"{hex(int((0x1F/0xD3)*HPratio*2 + 0x1F))[2:]}"
             )
 
+def get_status_emoji(status:List[str]):
+    emoji = ""
+    if 'dead' in status:
+        emoji = ":skull:"
+        return emoji
+    else:
+        if 'hurt' in status:
+            emoji += ":drop_of_blood:"
+        if 'shield' in status:
+            emoji += ":blue_square:"
+    
+        return emoji
 
 class Box(Panel):
     def __init__(self, update="Box called without its renderable", name:str="Box"):
@@ -175,7 +187,7 @@ class Battlefield(Box):
                         namespace = Group(
                             player.name,
                             Align(f"{player.HP}/{player.max_HP}", align="center", style=f"{HPcolor(player.HP, player.max_HP)}"),
-                            player.get_status_emoji()
+                            get_status_emoji(player.status)
                         )
                     else:
                         namespace = "empty"
@@ -202,7 +214,7 @@ class Battlefield(Box):
                 namespace = Group(
                     monster.name,
                     Align(f"{monster.HP}/{monster.max_HP}", align="center", style=f"{HPcolor(monster.HP, monster.max_HP)}"),
-                    monster.get_status_emoji()
+                    get_status_emoji(monster.status)
                     )
                 table[f"{monster.name}_namespace"].update(namespace)
                 #event update
