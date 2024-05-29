@@ -58,7 +58,10 @@ class Effect:
     def execute(self, data:'Data'):
         if type(self.value) == int:
             self.target.calculate_HP(self.value)
-            return self.target.isDead()
+            self.target.isDead()
+            return None
+        else:
+            return "No value in effect!\n"
 
 class Event:
     '''이벤트. original_speed, target_with_effect를 가진다.\n
@@ -84,16 +87,17 @@ class Event:
         else:
             return 0
         
-    def __init__(self, origin:'Creature', data:'Data', target_with_effect:dict|None=None):
+    def __init__(self, origin:Union['Creature', None], data:'Data', target_with_effect:dict|None=None):
         '''Event 주인, 전체 data, dict 형식의 target과 effect.'''
         self.effects = []
-        if origin != None:
-            self.origin = origin
+        self.origin = origin
 
         if target_with_effect != None:
             self.target_with_effect = target_with_effect
-        self.set_speed()
-        self.calculate_effects(data)
+
+        if origin != None:
+            self.set_speed()
+            self.calculate_effects(data)
 
 
     def set_speed(self):
@@ -155,13 +159,69 @@ class Event:
         self.trigger_condition = callable
 
     def execute_self(self, data:'Data'):
-        if 'dead' not in self.origin._status:
+        log = ""
+        if 'dead' not in self.origin.status:
             for effect in self.effects:
-                effect.execute(data)
+                log += new_log if (new_log := effect.execute(data)) != None else ""
+        return log
+
+class SingleBuff(Effect):
+    buff_dict = {
+        'shield' : ('[bold]:blue_square:[/bold]', 'b blue'),
+        'poison' : ('p', "b purple")
+    }
+
+    def __init__(self, target: Union['Character', 'Monster']):
+        self.target = target
+        self._color = 'dark_grey'
+
+    def get_buffname(self):
+        return [key for key in self.target.status if self.buff_dict.get(key) != None]
+    
+    def contentgen(self, value:int, color:str):
+        return f"[{color}]{'+' if value > 0 else '' }{value}[/{color}]"
+
+    def get_Icon(self):
+        return [self.buff_dict[key][0] for key in self.get_buffname()]
+
+    def get_content(self):
+        return [self.contentgen(value=self.target.status.get(key), color=self.buff_dict[key][1]) for key in self.get_buffname()]
+    
+    def execute(self, data:'Data'):
+        pass
+
+class Buff(Event):
+    target_with_effect = {}
+
+    @staticmethod
+    def trigger_condition(owner: Union['Character', 'Monster'], data: 'Data') -> int:
+        return 0
+
+    def __init__(self, data: 'Data'):
+        super().__init__(origin=None, data=data, target_with_effect=None)
+        self.time = " "
+
+    def refresh_buff(self, data:'Data'):
+        self.effects = []
+        bufftargets = [creature for creature in data.players + data.monsters if creature.index != 0 and creature.status != {}]
+        for bufftarget in bufftargets:
+            self.effects.append(SingleBuff(bufftarget))
+
+    def execute_self(self, data: 'Data'):
+        log = ""
+        for effect in self.effects:
+            log += effect.execute(data)
+        return log if log != "" else None
 
 class Creature:
     #중립
     typ : Literal['neutral', 'monster', 'character']= 'neutral'
+    status : dict[str, bool|int|None]
+    status_list = [
+        'dead',
+        'shield',
+        'hurt'
+    ]
 
     def __init__(self, name:str, icon:str, HP:int, key:str|None=None):
         self.name = name
@@ -169,27 +229,41 @@ class Creature:
         self.HP = self.max_HP = HP
         self.speed = 1
         self.key = key
-        self._status = []
+        self.status = {}
         self.command : str = f"Blank {self.name} command"
         self.available_events : List[Type[Event]]=[]
-
-    @property
-    def status(self):
-        return self._status
+        self.status_duration_list : list[Dict[Literal['name', 'turn', 'value'], int|str]] = []
+        '''name:status 이름, turn:남은 턴 수, value:복귀할 양'''
     
-    @status.setter
-    def status(self, string:str):
+    def add_status(self, string:str, value:int|None, turn:int|None=None):
         if string == 'dead':
-            self._status = ['dead']
-        elif 'hurt' in string and 'hurt' not in self._status:
-            self._status.append('hurt')
-        elif 'shield' in string and 'shield' not in self._status:
-            self._status.append('shield')
+            self.status = {'dead' : True}
+        elif string in self.status_list:
+            self.status[string] = self.status.get(string, 0) + value
+            if turn != None:
+                self.status_duration_list.append({"name" : string, "turn" : turn, "value" : value})
+        else:
+            return "No such status name!\n"
+        
+    def check_status_turn(self):
+        for lst in self.status_duration_list:
+            lst['turn'] -= 1
+            if lst['turn'] <= 0:
+                self.status[lst['name']] -= lst['value']
+                self.status_duration_list.remove(lst)
+                if self.status[lst['name']] <= 0:
+                    del(self.status[lst['name']])
 
     def calculate_HP(self, damage:int):
         '''직후 isDead() 호출을 권장.'''
-        if hasattr(self, 'shield_effect'):
-            damage = self.shield_effect.calculate_shield(damage)
+        if 'shield' in self.status:
+            self.status['shield'] += damage
+            if self.status['shield'] <= 0:
+                damage = self.status['shield']
+                self.status.pop('shield')
+            else:
+                damage = 0
+                
         self.HP += damage
     
     def isDead(self):
@@ -197,7 +271,7 @@ class Creature:
             return True
         elif self.HP <= 0:
             self.HP = 0
-            self.status = 'dead'
+            self.status = {'dead' : True}
             return True
         else:
             return False

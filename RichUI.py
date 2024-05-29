@@ -15,7 +15,14 @@ colorDict = {
     'HP_green' : '#2DD32D',
     'HP_yellow': '#D3D32D',
     'HP_red' : '#911F1F',
-    'shield_blue' : '#0D2D46'
+    'shield_blue' : '#0D2D46',
+    'dark_grey' : '#101010'
+}
+
+status_emoji = {
+    'dead' : ':skull:',
+    'shield' : ':blue_square:',
+    'hurt' : ':drop_of_blood:'
 }
 
 def HPcolor(HP:int, max_HP:int):
@@ -29,17 +36,18 @@ def HPcolor(HP:int, max_HP:int):
             f"{hex(int((0x1F/0xD3)*HPratio*2 + 0x1F))[2:]}"
             )
 
-def get_status_emoji(status:List[str]):
+
+
+
+def get_status_emoji(status:dict):
     emoji = ""
     if 'dead' in status:
-        emoji = ":skull:"
+        emoji = status_emoji["dead"]
         return emoji
     else:
-        if 'hurt' in status:
-            emoji += ":drop_of_blood:"
-        if 'shield' in status:
-            emoji += ":blue_square:"
-    
+        for status_name in status_emoji:
+            if status_name in status:
+                emoji += status_emoji[status_name]
         return emoji
 
 class Box(Panel):
@@ -83,10 +91,17 @@ class Battlefield(Box):
                     color_code = colorDict["background"]
                     print("No such color code!")
 
+                result = ""
+                if type(icon) == list:
+                    for i, ico in enumerate(icon):
+                        result += f"{ico}{colon}{content[i]} "
+                else:
+                    result = f"{icon}{colon}{content}"
+
                 #event 한 칸 반환
                 self.update(
                     Align(
-                        f"{icon}{colon}{content}",
+                        result,
                         align="center",
                         vertical="middle",
                         style=f"on {color_code}"

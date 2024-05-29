@@ -50,39 +50,12 @@ class SubEffect(Effect):
             self.target.HP += self.value
         return self.target.isDead()
 '''
-class Shield(Effect):
-    @property
-    def _content(self):
-        return f"[b blue]{'+' if self.value > 0 else '' }{self.value}[/b blue]"
-    
 
-    def __init__(self, target: Creature, value: int | None = None):
+class PrepareShield(Effect):
+    def __init__(self, target: Creature, value: int | None = None, whom:list[Creature]|None=None):
         self.target = target
         self.value = 0 if value == None else value
-        self.target.status = 'shield'
-        self.target.shield_effect = self
-
-        self._typ = 'fixed'
-        self._icon = '[bold]:blue_square:[/bold]'
-        self._color = 'shield_blue'
-        self.value += 10
-
-    def calculate_shield(self, damage:int):
-        self.value += damage
-        if self.value <= 0:
-            self.execute()
-            return self.value
-        else:
-            return 0
-
-    def execute(self, data):
-        self.target.status.remove('shield')
-        delattr(self.target, 'shield_effect')
-
-class ReadyShield(Effect):
-    def __init__(self, target: Creature, value: int | None = None):
-        self.target = target
-        self.value = 0 if value == None else value
+        self.whom = whom
 
         self._typ = 'fixed'
         self._icon = '[bold]:blue_square:[/bold]'
@@ -91,7 +64,11 @@ class ReadyShield(Effect):
         self._content = f"[b blue]{'+' if self.value > 0 else '' }{self.value}[/b blue]"
 
     def execute(self, data: Data):
-        data.eventList.append(Buff(self.target, data, {'self' : Shield}))
+        if self.whom != None:
+            for target in self.whom:
+                return target.add_status('shield', self.value, 1)
+        else:
+            return self.target.add_status('shield', self.value, 1)
 
 
 #trigger 추가
@@ -112,13 +89,6 @@ class SubEvent(Event):
             ...
         }
 '''
-class Buff(Event):
-    target_with_effect = {}
-
-    def __init__(self, origin: Creature, data: Data, target_with_effect: dict | None = None):
-        super().__init__(origin, data, target_with_effect)
-        self.time = " "
-
 #SubMonster 추가
 '''
 class SubMonster(Monster):
@@ -183,7 +153,7 @@ class A_Protect(Event):
         return index_trigger(owner, 1)
    
     target_with_effect = {
-        'self' : ReadyShield
+        'self' : PrepareShield
     }
 
     def __init__(self, origin: Creature, data: Data):
@@ -192,7 +162,7 @@ class A_Protect(Event):
             self.origin = origin
         self.set_speed()
         #계수 추가 필요
-        new_effect = ReadyShield(origin)
+        new_effect = PrepareShield(origin)
         self.effects.append(new_effect)
 
 class A_SingleHit(Event):

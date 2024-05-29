@@ -1,5 +1,5 @@
 from typing import Literal, Callable
-from RPGclass import Event, Monster, Character
+from RPGclass import Event, Monster, Character, Buff
 
 #Command의 뒤에 dataMethod와 필요한 매개변수를 lambda로 붙여, key 입력 시 시행한다.
 class SystemCommand():
@@ -49,19 +49,22 @@ class Data:
         key=None
         hascommand = False
         command = None
-        status = " "
+        status = {}
         #Only added in here
         dummy = True
 
         def __init__(self, index=0):
             self.index = index
             self.available_events = []
+
+
     
     def __init__(self):
         self.mode = "select"
         #character instance 하나를 testplayer에 저장한다. 디버그용.
         self.testplayer = Character("test player", "@", 30)
         self.testplayer.setVoice()
+        self.buff = Buff(self)
 
         self.fill_dummy()
         self.generate_testCommands()
@@ -162,7 +165,7 @@ class Data:
     #data가 변할 시 불러와져야 한다.
     def make_eventList(self):
         '''players와 monsters에서 get_event를 수행해, event에 time을 부여하고 eventList에 추가한다.'''
-        playereventList = []
+        playereventList :list[Event] = []
         for player in self.players:
             if player.index in [1, 2, 3, 4]:
                 index = player.index
@@ -186,25 +189,40 @@ class Data:
 
         eventlist = playereventList + monstereventlist
         eventlist = sorted(eventlist, key=lambda event: event.time)
+        self.buff.refresh_buff(self)
+        if self.buff.effects != []:
+            eventlist.append(self.buff)
         self.eventList = eventlist
 
     def proceed_turn(self):
+        survivors = [player for player in self.players if player.has_command(self.mode)]
+        if self.mode == 'select' and set(player.index for player in survivors) != {x + 1 for x in range(min(len(survivors), 4))}:
+            return "Select all character.\n"
+
         self.mode = "process"
+        if self.buff in self.eventList:
+            self.eventList.remove(self.buff) 
         if self.eventList == []:
             self.monsterIndexRefresh()
             for player in self.players:
                 player.index = 0
+                player.check_status_turn()
             self.fill_dummy()
             self.make_eventList()
             self.mode = 'select'
             return "turn ended\n"
         else:
-            self.clear_event(0)
+            log = self.clear_event(0)
             for event in self.eventList:
-                if event.effects == [] or event.origin.isDead():
+                if event.effects == [] or (event.origin != None and event.origin.isDead()):
                     self.eventList.remove(event)
                     del(event)
+            self.buff.refresh_buff(self)
+            if self.buff not in self.eventList and self.buff.effects != []:
+                self.eventList.append(self.buff)
+            return log
 
+    #####################################################################
     def writeMessage(self, text:str='default'):
         if text == 'default':
             return "nvoierhaoivhgoiewjhaoivghoiheiowhasdfafdadsasdfawecfewacfecwaeoivhoi하다니wjovig\n"
@@ -314,8 +332,8 @@ class Data:
 #                keep = effect.execute(self)
 #        if keep == True:
         try:
-            self.eventList[index].execute_self(self)
+            log = self.eventList[index].execute_self(self)
             self.eventList.pop(index)
-            return "last event cleared\n"
+            return log + "last event cleared\n"
         except IndexError:
             return "No such event index in eventList\n"
