@@ -37,6 +37,7 @@ class Data:
     isDialogOn : bool = True
     isBattlefieldOn : bool = True
     mode : Literal["select", "process"]
+    raw_dialog : str = ""
 
     testplayer : Character
 
@@ -56,8 +57,6 @@ class Data:
         def __init__(self, index=0):
             self.index = index
             self.available_events = []
-
-
     
     def __init__(self):
         self.mode = "select"
@@ -70,7 +69,7 @@ class Data:
         self.generate_testCommands()
 
     def generate_testCommands(self):
-        test_inputMessage = SystemCommand("(I)nput", 'i', lambda data: data.writeMessage())
+        test_inputMessage = SystemCommand("(I)nput", 'i', lambda data: data.add_log('test'))
         test_voiceChat = SystemCommand("(V)oice", 'v', lambda data: data.voiceChat(data.testplayer, "뭐라카노?", "_-^-."))
         test_add_player = SystemCommand("(P)layer add", 'p', lambda data: data.add_player(name=f"player {len(data.players) + 1}", icon="A", HP=20))
         test_delete_player = SystemCommand("(R)id player", 'r', lambda data: data.delete_player(len(data.players) - 1))
@@ -108,6 +107,11 @@ class Data:
             for index in indexlist:
                 if index not in existing_indexes:
                     self.players.append(self.DummyCharacter(index))
+
+    def clear_dummy(self):
+        for dummy in [player for player in self.players if hasattr(player, 'dummy')]:
+            self.players.remove(dummy)
+            del(dummy)
     
     def playerIndexUpdate(self, new_player:'Character'):
         '''남아있는 자리 중 가장 앞쪽을 반환한다. 없으면 0을 반환한다.'''
@@ -125,14 +129,15 @@ class Data:
 
     def monsterIndexRefresh(self):
         '''monsters 중 HP가 0인 개체를 제거한다. 아니면 index = 1부터 재배열한다.'''
+        #HP 0 제거
+        for monster in list(filter(lambda mon : mon.HP == 0, self.monsters)):
+            self.monsters.remove(monster)
+            del(monster)
+        #monsters 순서대로 index 재부여
         new_index = 0
         for monster in self.monsters:
-            if monster.HP == 0:
-                self.monsters.remove(monster)
-                del(monster)
-            else:
-                new_index += 1
-                monster.index = new_index
+            monster.index = new_index
+            new_index += 1
         
     def make_commandList(self):
         '''commandbox 갱신 시 실행된다. get_command의 결과를 commandList에 추가한다.'''
@@ -145,9 +150,10 @@ class Data:
             self.commandList = commandList
     
     #key 입력 시 실행된다.
-    def run_command(self, key:str, mode:str) -> str|tuple|None:
+    def run_command(self, key:str, mode:str) -> tuple|None:
         for entity in self.players + self.monsters + self.testCommands:
             if entity.get_key() == key:
+                #Creature 선택 시
                 if isinstance(entity, Character):
                     if entity.index == 0:
                         self.playerIndexUpdate(entity)
@@ -156,11 +162,12 @@ class Data:
                         self.fill_dummy(entity.index)
                     self.make_eventList()
                     return None
-
+                #SystemCommand 선택 시
                 elif isinstance(entity, SystemCommand):
                     output = entity.run_method(self)
                     return output
-        return "No such key!\n"
+        #일치하는 key가 없어 return문을 시행하지 못하면:
+        self.add_log("No such key!\n")
 
     #data가 변할 시 불러와져야 한다.
     def make_eventList(self):
@@ -197,20 +204,22 @@ class Data:
     def proceed_turn(self):
         survivors = [player for player in self.players if player.has_command(self.mode)]
         if self.mode == 'select' and set(player.index for player in survivors) != {x + 1 for x in range(min(len(survivors), 4))}:
-            return "Select all character.\n"
+            self.add_log("Select all character.\n")
+            return None
 
         self.mode = "process"
         if self.buff in self.eventList:
             self.eventList.remove(self.buff) 
         if self.eventList == []:
             self.monsterIndexRefresh()
+            self.clear_dummy()
             for player in self.players:
                 player.index = 0
                 player.check_status_turn()
             self.fill_dummy()
             self.make_eventList()
             self.mode = 'select'
-            return "turn ended\n"
+            self.add_log("turn ended\n")
         else:
             log = self.clear_event(0)
             for event in self.eventList:
@@ -220,20 +229,21 @@ class Data:
             self.buff.refresh_buff(self)
             if self.buff not in self.eventList and self.buff.effects != []:
                 self.eventList.append(self.buff)
-            return log
+            if log is str:
+                self.add_log(log)
 
     #####################################################################
-    def writeMessage(self, text:str='default'):
-        if text == 'default':
-            return "nvoierhaoivhgoiewjhaoivghoiheiowhasdfafdadsasdfawecfewacfecwaeoivhoi하다니wjovig\n"
-        elif type(text) == str:
-            return text
+    def add_log(self, text:str):
+        if text == 'test':
+            self.raw_dialog += "nvoierhaoivhgoiewjhaoivghoiheiowhasdfafdadsasdfawecfewacfecwaeoivhoi하다니wjovig\n"
+        else:
+            self.raw_dialog += text
 
     def voiceChat(self, character: Character, text:str, accent:str):
         if hasattr(character, 'voice'):
             return "chat", character.voice.speakgen(text, accent)
         else:
-            return f"{character.name} does not have a voice.\n"
+            self.add_log(f"{character.name} does not have a voice.\n")
 
     #아군 추가
     def add_player(self, character:Character|None=None, name:str='test player', icon:str='@', HP:int=10, voice:dict|Literal["silent"]|None=None):
@@ -258,7 +268,7 @@ class Data:
         self.playerIndexUpdate(new_creature)
         self.make_eventList()
 
-        return f"Character \'{new_creature.name}\' was added.\n"
+        self.add_log(f"Character \'{new_creature.name}\' was added.\n")
 
     #적군 추가
     def add_monster(self, monster:Monster|None=None, name:str='monster', icon:str='M', HP:int=10):
@@ -282,7 +292,7 @@ class Data:
             counter += 1
         self.monsters.append(new_creature)
         self.make_eventList()
-        return f"Monster \'{new_creature.name}\' was added.\n"
+        self.add_log(f"Monster \'{new_creature.name}\' was added.\n")
 
     #적군 삭제. 가장 오른쪽이 기본값.
     def kill_monster(self, index_in_monsters:int= -1):
@@ -292,9 +302,9 @@ class Data:
             self.monsters.pop(index_in_monsters)
             del(monster)
             self.make_eventList()
-            return text
+            self.add_log(text)
         except IndexError:
-            return "no such monster index in monsters\n"
+            self.add_log("no such monster index in monsters\n")
 
     #아군 삭제. 가장 왼쪽이 기본값.
     def delete_player(self, index_in_players:int= -1):
@@ -305,9 +315,9 @@ class Data:
             self.fill_dummy()
             del(player)
             self.make_eventList()
-            return text
+            self.add_log(text)
         except IndexError:
-            return "no such player index in players\n"
+            self.add_log("no such player index in players\n")
         
     #샘플 이벤트 추가. 기본적으로 맨 뒤에, index가 주어지면 eventList[index]에 추가.
     def add_sampleEvent(self, index:int|None=None):
@@ -321,7 +331,7 @@ class Data:
             self.eventList.append(new_event)
         elif type(index) == int:
             self.eventList.insert(index, new_event)
-        return "event \'test\' added\n"
+        self.add_log("event \'test\' added\n")
 
     #이벤트 삭제. 기본적으로 맨 아래.
     def clear_event(self, index:int= -1):
@@ -334,6 +344,6 @@ class Data:
         try:
             log = self.eventList[index].execute_self(self)
             self.eventList.pop(index)
-            return log + "last event cleared\n"
+            self.add_log(log + "last event cleared\n")
         except IndexError:
-            return "No such event index in eventList\n"
+            self.add_log("No such event index in eventList\n")

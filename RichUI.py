@@ -139,7 +139,6 @@ class Battlefield(Box):
                     daughterlayout.update(Align((f"[bold blue]{event.time}[/bold blue]"), vertical='middle'))
                 yield daughterlayout
 
-
     def __init__(self, data:Data=None):
         #data 제대로 들어옴
         if isinstance(data, Data):
@@ -165,7 +164,10 @@ class Battlefield(Box):
             
             #data의 monster 수만큼 monsterlayout 생성.
             monsterlist = list(self.creatureLayoutGen(data.monsters))
-            table["monsterside"].split_row(*monsterlist)
+            if monsterlist != []:
+                table["monsterside"].split_row(*monsterlist)
+            else:
+                table["monsterside"].update(Align("CLEAR!", align='center', vertical='middle'))
 
             #각 Creature마다 event 칸, field 칸, namespace 칸을 가진다.
             #각 "player i_event", "monster i_event"의 이름 형식
@@ -265,20 +267,13 @@ class Battlefield(Box):
         super().__init__(insidegrid, name="Battlefield")
 
 class Dialog(Box):
+    '''화면 왼쪽의 글 상자. 각종 메시지 출력 담당.\n
+       불러오면 wholetext의 내용을 가공해 Panel로 내보낸다.'''
 
-    wholetext : str
-    
-    def __init__(self, update="Dialog called without its renderable", refresh:bool=False, width:int=45, height:int=25):
-        if (refresh == False) and hasattr(self, "wholetext"):
-            self.wholetext = self.wholetext + update
-        else:
-            self.wholetext = update
-        
-        #if not (hasattr(self, "width") or hasattr(self, "height")):
-        #    super().__init__("making width and height")
-        self.wholetext = parse(self.wholetext, 48, height - 3)
-        
-        super().__init__(self.wholetext, name="Dialog")
+    def __init__(self, text="Dialog called without its renderable", width:int=50, height:int=25):
+        text = parse(text, width - 2, height - 3)
+        super().__init__(text, name="Dialog")
+
 
 class CommandBox(Box):
     def __init__(self, commandList:dict[str, str]|str|None = None):
@@ -327,23 +322,22 @@ class UI(Console):
         self.layout["down"].size = 4
         return self.layout
 
-    #ui.dialog를 재생성한다.
-    def dwrite(self, text:str):
+    def dwrite(self, data:'Data'):
+        '''ui.dialog를 재생성한다.'''
         #ui.dialog 자체를 재정의하므로, ui.dialog 밖에서 정의된다.
         #ui.dialog까지만 업데이트. 나머지는 layoutgen이 처리.
-        self.dialog.wholetext += text
-        self.dialog = Dialog(self.dialog.wholetext, width=self.width, height=self.height)
+        self.dialog = Dialog(data.raw_dialog, width=50, height=self.height)
 
-    #ui.battlefield를 재생성한다.
     def bwrite(self, data):
+        '''ui.battlefield를 재생성한다.'''
         self.battlefield = Battlefield(data)
 
-    #ui.commandbox를 재생성한다.
     def cwrite(self, commandList:Data.commandList):
+        '''ui.commandbox를 재생성한다.'''
         self.commandbox = CommandBox(commandList)
 
-#너비, 높이만 주어지면 어디든 쓸 수 있는 텍스트 조정 함수
 def parse(text:str, width, height, foreign:bool=True):
+    '''너비, 높이만 주어지면 어디든 쓸 수 있는 텍스트 조정 함수'''
     #1. 추가된 text에 \n 추가해서 width 맞추기
     buf = text.split('\n')
     line_counter = 0

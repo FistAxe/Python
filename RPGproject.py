@@ -111,15 +111,13 @@ if __name__ == "__main__":
             else:
                 #log를 가져온다.
                 output = main.data.run_command(user_input, main.screenmode)
-                #일반 메시지
-                if isinstance(output, str):
-                    main.ui.dwrite(output)
                 #실시간 갱신 메시지
-                elif isinstance(output, tuple) and len(output) > 0 and output[0] == 'chat':
+                if isinstance(output, tuple) and len(output) > 0 and output[0] == 'chat':
                     #char의 대상은 Generator로, sleep()이 걸려 있다.
                     for char in output[1]:
-                        main.ui.dwrite(char)
                         #한 글자마다 현재 dialog 내용으로 새 layout을 출력한다.
+                        main.data.add_log(char)
+                        main.ui.dwrite()
                         updateUI()
 
             #after event, refreshes with debugging print
@@ -128,7 +126,8 @@ if __name__ == "__main__":
                 #battlefield을 갱신한다.
                 main.ui.bwrite(main.data)
                 #dialog에 디버그 메시지를 출력한다.
-                main.ui.dwrite(f"{input_counter} updated\n")
+                main.data.add_log(f"{input_counter} updated\n")
+                main.ui.dwrite(main.data)
                 #commandbox를 갱신한다.
                 main.data.make_commandList()
                 main.ui.cwrite(main.data.commandList)
