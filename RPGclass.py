@@ -246,7 +246,7 @@ class Creature:
             return "No such status name!\n"
         
     def check_status_turn(self):
-        for lst in self.status_duration_list:
+        for lst in self.status_duration_list[:]:
             lst['turn'] -= 1
             if lst['turn'] <= 0:
                 self.status[lst['name']] -= lst['value']

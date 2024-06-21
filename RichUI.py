@@ -36,19 +36,14 @@ def HPcolor(HP:int, max_HP:int):
             f"{hex(int((0x1F/0xD3)*HPratio*2 + 0x1F))[2:]}"
             )
 
-
-
-
 def get_status_emoji(status:dict):
     emoji = ""
     if 'dead' in status:
         emoji = status_emoji["dead"]
         return emoji
     else:
-        for status_name in status_emoji:
-            if status_name in status:
-                emoji += status_emoji[status_name]
-        return emoji
+        emoji = [status_emoji[status_name] for status_name in status_emoji if status_name in status]
+        return "".join(emoji)
 
 class Box(Panel):
     def __init__(self, update="Box called without its renderable", name:str="Box"):
@@ -273,7 +268,6 @@ class Dialog(Box):
     def __init__(self, text="Dialog called without its renderable", width:int=50, height:int=25):
         text = parse(text, width - 2, height - 3)
         super().__init__(text, name="Dialog")
-
 
 class CommandBox(Box):
     def __init__(self, commandList:dict[str, str]|str|None = None):

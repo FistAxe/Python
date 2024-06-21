@@ -123,14 +123,18 @@ if __name__ == "__main__":
             #after event, refreshes with debugging print
             if user_input != None:
                 input_counter += 1
+
                 #battlefield을 갱신한다.
                 main.ui.bwrite(main.data)
+
                 #dialog에 디버그 메시지를 출력한다.
                 main.data.add_log(f"{input_counter} updated\n")
                 main.ui.dwrite(main.data)
+
                 #commandbox를 갱신한다.
                 main.data.make_commandList()
                 main.ui.cwrite(main.data.commandList)
+                
                 #현재 battlefield, dialog, messagebox의 내용으로 새 layout을 출력한다.
                 updateUI()
         

@@ -1,7 +1,6 @@
 import time
 import numpy as np
 import pygame
-from typing import TypedDict
 
 SEC = 0.11
 

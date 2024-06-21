@@ -143,7 +143,6 @@ class Goblin(Monster):
     def __init__(self, key: str | None = None):
         super().__init__(self.name, self.icon, self.HP, key)
 
-    
 #Character 추가
 class A_Protect(Event):
     original_speed = -3
