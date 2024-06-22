@@ -7,10 +7,11 @@ class SystemCommand():
     key : str
     testMethod : Callable[[],str|tuple]
     
-    def __init__(self, string:str, key:str, testMethod:Callable|None = None):
+    def __init__(self, string:str, key:str, testMethod:Callable|None = None, mode:str|None=None):
         self.string = string 
         self.key = key
         self.testMethod = testMethod
+        self.when_active = mode
 
     def has_command(self, mode:str):
         return True
@@ -62,15 +63,22 @@ class Data:
         self.mode = "select"
         #character instance 하나를 testplayer에 저장한다. 디버그용.
         self.testplayer = Character("test player", "@", 30)
-        self.testplayer.setVoice()
+        self.testplayer.setVoice({
+            'high': 740,
+            'middle': 455,
+            'low': 350,
+            'sec': 0.11
+        })
         self.buff = Buff(self)
 
         self.fill_dummy()
         self.generate_testCommands()
 
     def generate_testCommands(self):
-        test_inputMessage = SystemCommand("(I)nput", 'i', lambda data: data.add_log('test'))
+        test_inputMessage = SystemCommand("(L)og", 'l', lambda data: data.add_log('test'))
         test_voiceChat = SystemCommand("(V)oice", 'v', lambda data: data.voiceChat(data.testplayer, "뭐라카노?", "_-^-."))
+        test_open_info = SystemCommand("(I)nfo", 'i', lambda data: data.open_emptyinfo(), 'battlefield')
+        test_close_info = SystemCommand("(I)nfo close", 'i', lambda data:data.close_info(), 'info')
         test_add_player = SystemCommand("(P)layer add", 'p', lambda data: data.add_player(name=f"player {len(data.players) + 1}", icon="A", HP=20))
         test_delete_player = SystemCommand("(R)id player", 'r', lambda data: data.delete_player(len(data.players) - 1))
         test_add_monster = SystemCommand("(M)onster add", 'm', lambda data: data.add_monster(name=f"dummymon", icon="M", HP=10))
@@ -81,6 +89,8 @@ class Data:
         self.testCommands = [
             test_inputMessage,
             test_voiceChat,
+            test_open_info,
+            test_close_info,
             test_add_player,
             test_delete_player,
             test_add_monster,
@@ -139,10 +149,12 @@ class Data:
             monster.index = new_index
             new_index += 1
         
-    def make_commandList(self):
+    def make_commandList(self, main_mode:str):
         '''commandbox 갱신 시 실행된다. get_command의 결과를 commandList에 추가한다.'''
         commandList = {}
         for entity in self.testCommands + self.players + self.monsters:
+            if hasattr(entity, 'when_active') and entity.when_active not in [main_mode, None]:
+                continue
             #single command for single entity
             command : tuple|None = entity.get_command(self.mode)
             if type(command) == tuple and command[0] != None:
@@ -150,8 +162,10 @@ class Data:
             self.commandList = commandList
     
     #key 입력 시 실행된다.
-    def run_command(self, key:str, mode:str) -> tuple|None:
+    def run_command(self, key:str, main_mode:str) -> tuple|str|None:
         for entity in self.players + self.monsters + self.testCommands:
+            if hasattr(entity, 'when_active') and entity.when_active not in [main_mode, None]:
+                continue
             if entity.get_key() == key:
                 #Creature 선택 시
                 if isinstance(entity, Character):
@@ -232,7 +246,7 @@ class Data:
             if log is str:
                 self.add_log(log)
 
-    #####################################################################
+    ### debug ##################################################################
     def add_log(self, text:str):
         if text == 'test':
             self.raw_dialog += "nvoierhaoivhgoiewjhaoivghoiheiowhasdfafdadsasdfawecfewacfecwaeoivhoi하다니wjovig\n"
@@ -241,9 +255,18 @@ class Data:
 
     def voiceChat(self, character: Character, text:str, accent:str):
         if hasattr(character, 'voice'):
-            return "chat", character.voice.speakgen(text, accent)
+            gen = character.voice.speakgen(text, accent)
+            return "chat", gen
         else:
             self.add_log(f"{character.name} does not have a voice.\n")
+
+    def open_emptyinfo(self):
+        emptyinfo = "An empty info screen for debugging."
+        self.info = emptyinfo
+        return 'info'
+    
+    def close_info(self):
+        return 'battlefield'
 
     #아군 추가
     def add_player(self, character:Character|None=None, name:str='test player', icon:str='@', HP:int=10, voice:dict|Literal["silent"]|None=None):

@@ -1,10 +1,19 @@
-from rich import print
-from rich.text import Text
-from rich.panel import Panel
-from rich.console import Group
+import asyncio
+from datetime import datetime
 
-a = '[on blue]:shield: [on blue]'
-b = Text.from_ansi(" \033[D")
+async def async_generator():
+    for i in range(5):
+        yield i
+        await asyncio.sleep(1)  # Ensures the next value is scheduled after 1 second
 
+async def main():
+    async for value in async_generator():
+        print(f'{datetime.now()}: {value}')
 
-print(Panel(Group(a, b), expand=False, padding=(0,1,0,0)))
+a = async_generator()
+
+for _ in range(4):
+    print(f"{asyncio.run(a.__anext__())}")
+
+# Running the main coroutine
+asyncio.run(main())

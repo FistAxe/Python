@@ -282,10 +282,15 @@ class CommandBox(Box):
                 update += " "
         super().__init__(update, name="CommandBox")
 
+class Info(Box):
+    def __init__(self, info:Data="Info called without its renderable"):
+        super().__init__(info, name="Info")
+
 class UI(Console):
 
     dialog : Dialog
     battlefield : Battlefield
+    info : Info
     commandbox : CommandBox
     layout : Layout
 
@@ -294,13 +299,14 @@ class UI(Console):
         self.dialog = Dialog("__init__")
         self.battlefield = Battlefield("__init__")
         self.commandbox = CommandBox("__init__")
+        self.info = Info("__init__")
 
     def resize(self, console_width, console_height):
         self.width = console_width
         self.height = console_height - 1
 
     #Live에서 호출할 layout을 생성한다. Live( Layout() ) 같은 식으로.
-    def layoutgen(self):
+    def layoutgen(self, mode:str):
         self.layout = Layout()
         self.layout.size = self.height - 1
         self.layout.split_row(
@@ -308,7 +314,7 @@ class UI(Console):
             Layout(self.dialog, name="right")
             )
         self.layout["left"].split_column(
-            Layout(self.battlefield, name="up"),
+            Layout(self.info if mode == 'info' else self.battlefield, name="up"),
             Layout(self.commandbox, name="down"),
             )
 
@@ -325,6 +331,9 @@ class UI(Console):
     def bwrite(self, data):
         '''ui.battlefield를 재생성한다.'''
         self.battlefield = Battlefield(data)
+
+    def iwrite(self, data:'Data'):
+        self.info = Info(data.info)
 
     def cwrite(self, commandList:Data.commandList):
         '''ui.commandbox를 재생성한다.'''

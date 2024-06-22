@@ -1,4 +1,5 @@
-import time
+#import time
+import asyncio
 import numpy as np
 import pygame
 
@@ -26,7 +27,7 @@ defalt_voiceset = {
 
 class voice:
     def __init__(self, **voiceset):
-        if voiceset == None:
+        if voiceset == {}:
             voiceset = defalt_voiceset
         self.SEC = voiceset['sec']
         self.bip = generateBeep(voiceset["high"], self.SEC)
@@ -35,6 +36,18 @@ class voice:
         self.bip.set_volume(0.6)
         self.bop.set_volume(0.6)
         self.bup.set_volume(0.6)
+
+    async def async_speakgen(self, line, accent, loop):
+        for l, a in zip(line, accent):
+            if l == ('!' or '?' or '.' or ',' or '-'):
+                yield l
+                await loop.run_in_executor(None, asyncio.sleep(self.SEC))
+            elif a == ' ': #No verbal break
+                yield l
+            else:
+                self.speakchar(a)
+                yield l
+                await loop.run_in_executor(None, asyncio.sleep(self.SEC))
     
     #line의 음절이 하나씩 들어 있는 generator이다. 글자 하나를 반환한다.
     #for 글자 in speakgen:
@@ -42,16 +55,16 @@ class voice:
     def speakgen(self, line:str, accent:str):
         if len(line) != len(accent):
             raise ValueError("linenum != accent!")
-        for l, a in zip(line, accent):
-            if l == ('!' or '?' or '.' or ',' or '-'):
-                yield l
-                time.sleep(self.SEC)
-            elif a == ' ': #No verbal break
-                yield l
-            else:
-                self.speakchar(a)
-                yield l
-                time.sleep(self.SEC)
+        else:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            gen = self.async_speakgen(line, accent, loop)
+            while True:
+                try:
+                    yield loop.run_until_complete(gen.__anext__())
+                except StopAsyncIteration:
+                    break
+            loop.close()
         yield '\n'
 
     def speakchar(self, accent:str):
@@ -63,9 +76,11 @@ class voice:
                 self.bip.play()
 
 
+
+
 #예시. 아래처럼 외부에서 voice 인스턴스를 생성해 speakgen을 반복해서 불러올 것.
-def voiceFuncTest(voice:voice):
-    for chr in voice.speakgen("뭐라카노?", "_-^-."):
+def voiceFuncTest(voice:voice, line:str, accent:str):
+    for chr in voice.speakgen(line, accent):
         print(chr, end='')
     
 if __name__ == "__main__":

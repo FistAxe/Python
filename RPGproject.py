@@ -13,12 +13,12 @@ class Main:
     #추상적 클래스 선언. console, data 불러오기.
     ui : UI
     data : Data
-    screenmode : Literal["select", "default"]
+    screenmode : Literal["battlefield", "info", "default"]
         
     def __init__(self):
         self.ui = UI(WIDTH, HEIGHT)
         self.data = Data()
-        self.screenmode = "init"
+        self.screenmode = "default"
 
         #처음에 player 하나를 추가한다. 디버그용.
         self.data.add_player(andrew)
@@ -57,7 +57,7 @@ if __name__ == "__main__":
 
     def layoutgen():
         '''Makes Layout() from present main.ui.'''
-        return main.ui.layoutgen()
+        return main.ui.layoutgen(main.screenmode)
 
     with Live(layoutgen(), console=main.ui, auto_refresh=False) as live:
         #Live(Layout()), arg) as live:
@@ -105,19 +105,24 @@ if __name__ == "__main__":
 
             elif input_counter == 0:
                 input_counter += 1
+                main.screenmode = 'battlefield'
                 pass
 
             #영어 키보드
             else:
                 #log를 가져온다.
                 output = main.data.run_command(user_input, main.screenmode)
+
+                if output in ['info', 'default', 'battlefield']:
+                    main.screenmode = output
+                
                 #실시간 갱신 메시지
-                if isinstance(output, tuple) and len(output) > 0 and output[0] == 'chat':
+                elif isinstance(output, tuple) and len(output) > 0 and output[0] == 'chat':
                     #char의 대상은 Generator로, sleep()이 걸려 있다.
                     for char in output[1]:
                         #한 글자마다 현재 dialog 내용으로 새 layout을 출력한다.
                         main.data.add_log(char)
-                        main.ui.dwrite()
+                        main.ui.dwrite(main.data)
                         updateUI()
 
             #after event, refreshes with debugging print
@@ -132,7 +137,7 @@ if __name__ == "__main__":
                 main.ui.dwrite(main.data)
 
                 #commandbox를 갱신한다.
-                main.data.make_commandList()
+                main.data.make_commandList(main.screenmode)
                 main.ui.cwrite(main.data.commandList)
                 
                 #현재 battlefield, dialog, messagebox의 내용으로 새 layout을 출력한다.
