@@ -16,7 +16,8 @@ colorDict = {
     'HP_yellow': '#D3D32D',
     'HP_red' : '#911F1F',
     'shield_blue' : '#0D2D46',
-    'dark_grey' : '#101010'
+    'dark_grey' : '#101010',
+    'unselected' : '#909070'
 }
 
 status_emoji = {
@@ -239,7 +240,21 @@ class Battlefield(Box):
             )
 
             #Info panel 설정
-            character_info = Panel("Info")
+            info_text = ""
+            for character in data.players:
+                selected = False if character.index == 0 else True
+                if selected == True:
+                    info_text += f"{character.name:<10}"
+                elif 'dead' in character.status:
+                    info_text += f"[{colorDict['HP_red']}]{character.name:<10}[/{colorDict['HP_red']}]"
+                else:
+                    info_text += f"[{colorDict['unselected']}]{character.name:<10}[/{colorDict['unselected']}]"
+                info_text += f"{get_status_emoji(character.status):<6}"
+                if selected == True:
+                    info_text += f"{'No description.' if character.readyevent == None else character.readyevent.description}\n"
+                else:
+                    info_text += "\n"
+            character_info = Panel(info_text)
 
         elif data == None:
             table = Panel("Data is 'None'")

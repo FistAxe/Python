@@ -307,12 +307,14 @@ class Data:
         new_creature.index = len(self.monsters) + 1
         Monster.num += 1
         #추가
-        counter = 1
-        name_exists = any(new_creature.name in monster.name for monster in self.monsters)
-        while name_exists:
-            new_creature.name = f"{new_creature.name} {counter}"
-            name_exists = any(new_creature.name in monster.name for monster in self.monsters)
-            counter += 1
+        counter = 0
+        if any(new_creature.name in monster.name for monster in self.monsters):
+            name_exists = True
+            while name_exists:
+                counter += 1
+                numbered_name = f"{new_creature.name} {counter}"
+                name_exists = any(numbered_name in monster.name for monster in self.monsters)
+            new_creature.name = numbered_name
         self.monsters.append(new_creature)
         self.make_eventList()
         self.add_log(f"Monster \'{new_creature.name}\' was added.\n")

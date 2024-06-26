@@ -146,6 +146,7 @@ class Goblin(Monster):
 #Character 추가
 class A_Protect(Event):
     original_speed = -3
+    description = "Shield. Yield shield to get 10 shield."
 
     @staticmethod
     def trigger_condition(owner: Character | Monster, data: Data) -> int:
@@ -166,6 +167,7 @@ class A_Protect(Event):
 
 class A_SingleHit(Event):
     original_speed = 2
+    description = 'Attack the most front enemy with melee damage.'
 
     @staticmethod
     def trigger_condition(owner: Character | Monster, data: Data) -> int:
@@ -178,6 +180,7 @@ class A_SingleHit(Event):
 
 class A_MultiHit(Event):
     original_speed = 4
+    description = 'Attack all enemys with melee damage.'
 
     @staticmethod
     def trigger_condition(owner: Character | Monster, data: Data) -> int:
@@ -190,6 +193,7 @@ class A_MultiHit(Event):
 
 class A_Backup(Event):
     original_speed = 6
+    description = 'attacks the most far enemy with melee damage.'
 
     @staticmethod
     def trigger_condition(owner: Character | Monster, data: Data) -> int:

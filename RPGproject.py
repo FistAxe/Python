@@ -59,7 +59,7 @@ if __name__ == "__main__":
         '''Makes Layout() from present main.ui.'''
         return main.ui.layoutgen(main.screenmode)
 
-    with Live(layoutgen(), console=main.ui, auto_refresh=False) as live:
+    with Live(layoutgen(), console=main.ui, auto_refresh=True) as live:
         #Live(Layout()), arg) as live:
         #    ...
         #    updateUI()

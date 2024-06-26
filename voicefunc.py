@@ -41,13 +41,13 @@ class voice:
         for l, a in zip(line, accent):
             if l == ('!' or '?' or '.' or ',' or '-'):
                 yield l
-                await loop.run_in_executor(None, asyncio.sleep(self.SEC))
+                await asyncio.sleep(self.SEC)
             elif a == ' ': #No verbal break
                 yield l
             else:
                 self.speakchar(a)
                 yield l
-                await loop.run_in_executor(None, asyncio.sleep(self.SEC))
+                await asyncio.sleep(self.SEC)
     
     #line의 음절이 하나씩 들어 있는 generator이다. 글자 하나를 반환한다.
     #for 글자 in speakgen:

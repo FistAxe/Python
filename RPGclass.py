@@ -77,6 +77,7 @@ class Event:
         "enemy_1" : "damage_7"
     }
     '''{ '대상1 str' : '효과1 str', ...}'''
+    description : str = 'dummy event.'
         
 
     @staticmethod
@@ -217,7 +218,7 @@ class Creature:
     #중립
     typ : Literal['neutral', 'monster', 'character']= 'neutral'
     status : dict[str, bool|int|None]
-    status_list = [
+    possible_status_list = [
         'dead',
         'shield',
         'hurt'
@@ -234,11 +235,12 @@ class Creature:
         self.available_events : List[Type[Event]]=[]
         self.status_duration_list : list[Dict[Literal['name', 'turn', 'value'], int|str]] = []
         '''name:status 이름, turn:남은 턴 수, value:복귀할 양'''
+        self.readyevent : Event|None = None
     
     def add_status(self, string:str, value:int|None, turn:int|None=None):
         if string == 'dead':
             self.status = {'dead' : True}
-        elif string in self.status_list:
+        elif string in self.possible_status_list:
             self.status[string] = self.status.get(string, 0) + value
             if turn != None:
                 self.status_duration_list.append({"name" : string, "turn" : turn, "value" : value})
@@ -299,12 +301,16 @@ class Creature:
         self.available_events.append(eventClass)
 
     def get_event(self, data:'Data'):
-        '''data의 값을 자신의 eventClass에 순서대로 대입해, 일단 나오면 그 클래스를 반환한다.'''
+        '''data의 값을 자신의 eventClass에 순서대로 대입해, 가장 높은 우선순위의 eventClass를 반환한다.'''
+        priority = 0
+        event = None
         for eventClass in self.available_events:
-            if eventClass.trigger_condition(self, data):
+            buf_prior = eventClass.trigger_condition(self, data)
+            if buf_prior > priority:
+                priority = buf_prior
                 event = eventClass(self, data)
-                return event
-        return None
+        self.readyevent = event
+        return event
     
     def make_info(self):
         return f"{self.name} has no info.\n"
@@ -396,14 +402,6 @@ class Character(Creature):
             return False
         else:
             return False
-
-    #data의 값을 각 eventClass에 순서대로 대입해, 일단 나오면 그 클래스를 반환한다. Override.
-    def get_event(self, data:'Data'):
-        for eventClass in self.available_events:
-            if eventClass.trigger_condition(self, data):
-                event = eventClass(self, data)
-                return event
-        return None
         
 def parse_coeff():
     pass
