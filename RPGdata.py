@@ -159,7 +159,7 @@ class Data:
             self.monsters.remove(monster)
             del(monster)
         #monsters 순서대로 index 재부여
-        new_index = 0
+        new_index = 1
         for monster in self.monsters:
             monster.index = new_index
             new_index += 1

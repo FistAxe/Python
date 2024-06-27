@@ -98,6 +98,8 @@ if __name__ == "__main__":
             #항상 q로 종료
             if user_input == 'q':
                 break
+
+            #일시정지: '`'
             elif user_input == '`':
                 while True:
                     resume = keyboard.read_event()
@@ -151,5 +153,5 @@ if __name__ == "__main__":
         #입력 버퍼 초기화 후 Live 종료.
         clear_terminal_buffer()
     #Live 끝
+    print('end')
 #main 끝
-print('end')

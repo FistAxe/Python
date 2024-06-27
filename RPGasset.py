@@ -70,7 +70,6 @@ class PrepareShield(Effect):
         else:
             return self.target.add_status('shield', self.value, 1)
 
-
 #trigger 추가
 def index_trigger(owner:Character|Monster, index:int):
     return 1 if owner.index == index else 0
@@ -144,8 +143,6 @@ class Goblin(Monster):
         super().__init__(self.name, self.icon, self.HP, key)
 
 #Character 추가
-
-
 class Andrew(Character):
     name = 'Andrew'
     icon = 'A'

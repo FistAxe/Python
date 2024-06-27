@@ -14,10 +14,6 @@ def generateBeep(frequency, duration = 0.11):
     beep = pygame.sndarray.make_sound(wave)
     return beep
 
-bip = generateBeep(740, SEC)
-bop = generateBeep(455, SEC)
-bup = generateBeep(350, SEC)
-
 defalt_voiceset = {
     'high': 740,
     'middle': 455,
@@ -74,9 +70,6 @@ class voice:
                 self.bup.play()
             elif accent == '^':
                 self.bip.play()
-
-
-
 
 #예시. 아래처럼 외부에서 voice 인스턴스를 생성해 speakgen을 반복해서 불러올 것.
 def voiceFuncTest(voice:voice, line:str, accent:str):
