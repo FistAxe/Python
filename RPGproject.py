@@ -3,7 +3,7 @@ from RPGdata import Data
 from RichUI import UI
 from rich.live import Live
 from typing import Literal
-from RPGasset import andrew, brian, cinnamon, dahlia, Goblin
+import RPGasset
 
 terminalSize = os.get_terminal_size()
 WIDTH = terminalSize.columns
@@ -14,20 +14,26 @@ class Main:
     ui : UI
     data : Data
     screenmode : Literal["battlefield", "info", "default"]
-        
-    def __init__(self):
+
+    def __init__(self, is_test:bool=False):
         self.ui = UI(WIDTH, HEIGHT)
-        self.data = Data()
+        self.data = Data(isTest=is_test)
         self.screenmode = "default"
 
-        #처음에 player 하나를 추가한다. 디버그용.
+        #로딩
+        andrew = RPGasset.Andrew()
+        brian = RPGasset.Brian()
+        cinnamon = RPGasset.Cinnamon()
+        dahlia = RPGasset.Dahlia()
+
+        #player 추가
         self.data.add_player(andrew)
         self.data.add_player(brian)
         self.data.add_player(cinnamon)
         self.data.add_player(dahlia)
 
         for _ in range(3):
-            self.data.add_monster(Goblin())
+            self.data.add_monster(RPGasset.Goblin())
 
 
     def reset_terminal_size(self):
@@ -51,15 +57,14 @@ def clear_terminal_buffer():
         termios.tcflush(sys.stdin, termios.TCIOFLUSH)
 
 if __name__ == "__main__":
-    main = Main()
+    main = Main(is_test=True)
     #아직 만드는 중
-    main.data.isTest = True
 
     def layoutgen():
         '''Makes Layout() from present main.ui.'''
         return main.ui.layoutgen(main.screenmode)
 
-    with Live(layoutgen(), console=main.ui, auto_refresh=True) as live:
+    with Live(layoutgen(), console=main.ui, auto_refresh=False) as live:
         #Live(Layout()), arg) as live:
         #    ...
         #    updateUI()
@@ -147,3 +152,4 @@ if __name__ == "__main__":
         clear_terminal_buffer()
     #Live 끝
 #main 끝
+print('end')

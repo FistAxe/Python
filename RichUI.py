@@ -2,6 +2,7 @@ from rich.console import Console, Group
 from rich.layout import Layout
 from rich.panel import Panel
 from rich.align import Align
+from rich.text import Text
 from rich import box
 from RPGclass import Effect, Creature, Event
 from RPGdata import Data
@@ -17,13 +18,15 @@ colorDict = {
     'HP_red' : '#911F1F',
     'shield_blue' : '#0D2D46',
     'dark_grey' : '#101010',
-    'unselected' : '#909070'
+    'unselected' : '#909070',
+    'highlight_yellow' : '#EEEE80',
+    'highlight_red' : '#FF8080'
 }
 
 status_emoji = {
-    'dead' : ':skull:',
-    'shield' : ':blue_square:',
-    'hurt' : ':drop_of_blood:'
+    'dead' : '💀',
+    'shield' : '🟦',
+    'hurt' : '🩸'
 }
 
 def HPcolor(HP:int, max_HP:int):
@@ -55,15 +58,34 @@ class Battlefield(Box):
 
     #세로 축: 하나의 개체.
     class CreatureLayout(Layout):
+        def __init__(self, owner:Creature):
+            self.owner = owner
+            super().__init__(name=owner.name)
+
+            if not hasattr(self.owner, 'dummy'):
+                namespace = Group(
+                    self.owner.name,
+                    Align(f"{self.owner.HP}/{self.owner.max_HP}", align="center", style=f"{HPcolor(self.owner.HP, self.owner.max_HP)}"),
+                    get_status_emoji(self.owner.status)
+                    )
+            else:
+                namespace = "empty"
+        
+            self.split_column(
+                Layout(name=f"{self.owner.name}_event"),
+                Layout(Panel(Align(f"{self.owner.icon}", align="center"), box=box.HEAVY), name=f"{self.owner.name}_field", size=3),
+                Layout(namespace, name=f"{self.owner.name}_namespace", size=3)
+                )
+
         def add_owner(self, owner:Creature):
             self.owner = owner
 
     #각 칸: 하나의 effect.
     class EffectLayout(Layout):
-        effect : Effect
-
-        def effectPanelgen(self):
-            if hasattr(self, 'effect'):
+        def __init__(self, name:str, effect:Effect):
+            self.effect = effect
+            super().__init__(name=name)
+            if isinstance(self.effect, Effect):
                 icon = self.effect.get_Icon()
                 if icon == None:
                     icon = "X"
@@ -108,8 +130,7 @@ class Battlefield(Box):
 
     def creatureLayoutGen(self, iterable:List[Creature]):
         for entity in iterable:
-            daughterlayout = self.CreatureLayout(name=f"{entity.name}")
-            daughterlayout.add_owner(entity)
+            daughterlayout = self.CreatureLayout(owner=entity)
             yield daughterlayout
 
     def eventLayoutGen(self, owner:Creature, iterable:List[Event]):
@@ -117,12 +138,11 @@ class Battlefield(Box):
             yield Layout(" ")
         else:
             for index, event in enumerate(iterable):
-                daughterlayout = self.EffectLayout(name=f"event_{index + 1}")
-                daughterlayout.update("")
+                daughterlayout = Layout(" ")
                 for effect in event.effects:
                     if effect.target == owner:
-                        daughterlayout.effect = effect
-                        daughterlayout.effectPanelgen()
+                        daughterlayout = (Battlefield.EffectLayout(f"event_{index + 1}", effect))
+                        break
                 yield daughterlayout
 
     def timeLayoutGen(self, eventList:List[Event]):
@@ -132,7 +152,7 @@ class Battlefield(Box):
             for event in eventList:
                 daughterlayout = Layout(" ")
                 if hasattr(event, 'time'):
-                    daughterlayout.update(Align((f"[bold blue]{event.time}[/bold blue]"), vertical='middle'))
+                    daughterlayout.update(Align((f"[bold blue]{event.time}[/bold blue]"), vertical='middle', align='center'))
                 yield daughterlayout
 
     def __init__(self, data:Data=None):
@@ -148,15 +168,13 @@ class Battlefield(Box):
                 #오른쪽, monsters
                 Layout(name="monsterside")
             )
-            table["middle"].size = 2
+            table["middle"].size = 3
 
             #player는 총 4명.
-            table["playerside"].split_row(
-                Layout(name="player 4"),
-                Layout(name="player 3"),
-                Layout(name="player 2"),
-                Layout(name="player 1"),
-            )
+            indexed_player = [player for player in data.players if player.index in (1, 2, 3, 4)]
+            indexed_player.sort(key = lambda x: x.index, reverse=True)
+            playerlist = list(self.creatureLayoutGen(indexed_player))
+            table["playerside"].split_row(*playerlist)
             
             #data의 monster 수만큼 monsterlayout 생성.
             monsterlist = list(self.creatureLayoutGen(data.monsters))
@@ -165,51 +183,20 @@ class Battlefield(Box):
             else:
                 table["monsterside"].update(Align("CLEAR!", align='center', vertical='middle'))
 
-            #각 Creature마다 event 칸, field 칸, namespace 칸을 가진다.
-            #각 "player i_event", "monster i_event"의 이름 형식
-            for playerlayout in table["playerside"].children:
-                playerlayout.split_column(
-                    Layout(name=f"{playerlayout.name}_event"),
-                    Layout(name=f"{playerlayout.name}_field", size=3),
-                    Layout(name=f"{playerlayout.name}_namespace", size=3)
-                    )
-            
-            for monsterlayout in table["monsterside"].children:
-                monsterlayout.split_column(
-                    Layout(name=f"{monsterlayout.name}_event"),
-                    Layout(name=f"{monsterlayout.name}_field", size=3),
-                    Layout(name=f"{monsterlayout.name}_namespace",size=3)
-                )
-
             table["middle"].split_column(
                 Layout(name="middle_event"),
-                Layout(" ", name="middle_field", size=3),
+                Layout(Align("⌛", vertical='middle'), name="middle_field", size=3),
                 Layout(" ", name="middle_namespace", size=3)
             )
 
             #player의 세부 사항 지정.
             playerindexlist = [1, 2, 3, 4]
-            for player in data.players:
-                if player.index in playerindexlist:
-                    #field update
-                    table[f"player {player.index}_field"].update(
-                        Panel(Align(f"{player.icon}", align="center"), box=box.HEAVY)
-                        )
-                    #status update
-                    if not hasattr(player, 'dummy'):
-                        namespace = Group(
-                            player.name,
-                            Align(f"{player.HP}/{player.max_HP}", align="center", style=f"{HPcolor(player.HP, player.max_HP)}"),
-                            get_status_emoji(player.status)
-                        )
-                    else:
-                        namespace = "empty"
-                    table[f"player {player.index}_namespace"].update(namespace)
-                    #event update
-                    table[f"player {player.index}_event"].split_column(
-                        *list(self.eventLayoutGen(player, data.eventList))
+            for layout in table["playerside"].children:
+                #event update
+                table[f"{layout.owner.name}_event"].split_column(
+                    *list(self.eventLayoutGen(layout.owner, data.eventList))
                     )
-                    playerindexlist.remove(player.index)
+                playerindexlist.remove(layout.owner.index)
 
             #비어있는 아군의 세부 사항 지정.
             for blank in playerindexlist:
@@ -218,61 +205,66 @@ class Battlefield(Box):
                 table[f"player {blank}_event"].update(" ")
             
             #Monster의 세부 사항 지정.
-            for monster in data.monsters:
-                #field update
-                table[f"{monster.name}_field"].update(
-                    Panel(Align(f"{monster.icon}", align="center"), box=box.HEAVY)
-                    )
-                #status update
-                namespace = Group(
-                    monster.name,
-                    Align(f"{monster.HP}/{monster.max_HP}", align="center", style=f"{HPcolor(monster.HP, monster.max_HP)}"),
-                    get_status_emoji(monster.status)
-                    )
-                table[f"{monster.name}_namespace"].update(namespace)
+            for layout in table["monsterside"].children:
                 #event update
-                table[f"{monster.name}_event"].split_column(
-                    *list(self.eventLayoutGen(monster, data.eventList))
+                table[f"{layout.owner.name}_event"].split_column(
+                    *list(self.eventLayoutGen(layout.owner, data.eventList))
                 )
 
             table["middle_event"].split_column(
                 *list(self.timeLayoutGen(data.eventList))
             )
 
+            if data.eventList != []:
+                now = data.eventList[0].origin
+                if now in data.players:
+                    table[f"{now.name}_field"].update(
+                        Panel(Align(f"{now.icon}", align="center"), box=box.HEAVY, border_style=f"blink {colorDict['highlight_yellow']}")
+                        )
+                elif now in data.monsters:
+                    table[f"{now.name}_field"].update(
+                        Panel(Align(f"{now.icon}", align="center"), box=box.HEAVY, border_style=f"blink {colorDict['highlight_red']}")
+                        )
+
             #Info panel 설정
-            info_text = ""
-            for character in data.players:
-                selected = False if character.index == 0 else True
+            if data.smallinfo_type == 'Character':
+                smallinfo_list = data.players
+            elif data.smallinfo_type == 'Monster':
+                smallinfo_list = data.monsters
+            smallinfo = Text()
+            for creature in smallinfo_list:
+                selected = False if creature.index == 0 else True
                 if selected == True:
-                    info_text += f"{character.name:<10}"
-                elif 'dead' in character.status:
-                    info_text += f"[{colorDict['HP_red']}]{character.name:<10}[/{colorDict['HP_red']}]"
+                    smallinfo.append(f"{creature.name:<10}")
+                elif 'dead' in creature.status:
+                    smallinfo.append(f"{creature.name:<10}", colorDict['HP_red'])
                 else:
-                    info_text += f"[{colorDict['unselected']}]{character.name:<10}[/{colorDict['unselected']}]"
-                info_text += f"{get_status_emoji(character.status):<6}"
+                    smallinfo.append(f"{creature.name:<10}", colorDict["unselected"])
+                emoji = Text(f"{get_status_emoji(creature.status)}")
+                emoji.align(align='left', width=8)
+                smallinfo.append(emoji)
                 if selected == True:
-                    info_text += f"{'No description.' if character.readyevent == None else character.readyevent.description}\n"
+                    smallinfo.append(f"{'No description.' if creature.readyevent == None else creature.readyevent.description}\n")
                 else:
-                    info_text += "\n"
-            character_info = Panel(info_text)
+                    smallinfo.append("\n")
 
         elif data == None:
             table = Panel("Data is 'None'")
-            character_info = Panel("Data is 'None'")
+            smallinfo = "Data is 'None'"
         elif type(data) == str:
             table = Panel(f"{data}")
-            character_info = Panel(" ")
+            smallinfo = " "
         else:
             table = Panel("Data is not 'Data'")
-            character_info = Panel("Wrong Data")
+            smallinfo = "Wrong Data"
         
         insidegrid = Layout()
         insidegrid.split_column(
             Layout(table, name="table"),
-            Layout(character_info, name="info")
+            Layout(Box(smallinfo, name="Info"), name="smallinfo")
         )
 
-        insidegrid["info"].size = 6
+        insidegrid["smallinfo"].size = 6
 
         super().__init__(insidegrid, name="Battlefield")
 
@@ -285,15 +277,15 @@ class Dialog(Box):
         super().__init__(text, name="Dialog")
 
 class CommandBox(Box):
-    def __init__(self, commandList:dict[str, str]|str|None = None):
-        if commandList == (None or {}):
+    def __init__(self, commandList:list[Creature]|None = None):
+        if commandList == (None or []):
             update = "Press any key"
         elif isinstance(commandList, str):
             update = commandList
         else:
             update = ""
-            for string in commandList.values():
-                update += string
+            for entity in commandList:
+                update += entity.get_command()
                 update += " "
         super().__init__(update, name="CommandBox")
 

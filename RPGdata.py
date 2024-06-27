@@ -3,24 +3,28 @@ from RPGclass import Event, Monster, Character, Buff
 
 #Command의 뒤에 dataMethod와 필요한 매개변수를 lambda로 붙여, key 입력 시 시행한다.
 class SystemCommand():
-    string : str
+    command_str : str
     key : str
     testMethod : Callable[[],str|tuple]
     
-    def __init__(self, string:str, key:str, testMethod:Callable|None = None, mode:str|None=None):
-        self.string = string 
+    def __init__(self, command_str:str, key:str, testMethod:Callable|None = None, phase:str|None=None, main_mode:str|None=None):
+        self.command_str = command_str 
         self.key = key
         self.testMethod = testMethod
-        self.when_active = mode
+        self.active_phase = phase
+        self.active_mode = main_mode
 
-    def has_command(self, mode:str):
-        return True
-
-    def get_command(self, mode:str):
-        if self.has_command(mode) and self.string != None:
-            return self.key, self.string
+    def has_command(self, phase:str, main_mode:str):
+        if self.active_phase in (phase, None) and self.active_mode in (main_mode, None):
+            return True
         else:
-            return None
+            return False
+
+    def get_command(self):
+        if self.command_str != None:
+            return self.command_str
+        else:
+            return ""
         
     def get_key(self):
         return self.key
@@ -32,12 +36,14 @@ class Data:
     monsters : list[Monster] = []
     players : list[Character] = []
     eventList : list[Event] = []
-    commandList : dict[str, str] = {}
+    commandList : list[Character|Monster|SystemCommand] = []
+    systemCommands : list[SystemCommand] = []
     testCommands : list[SystemCommand] = []
     isTest : bool = False
     isDialogOn : bool = True
     isBattlefieldOn : bool = True
-    mode : Literal["select", "process"]
+    phase : Literal["select", "process"]
+    smallinfo_type : Literal["Character", "Monster"] = "Character"
     raw_dialog : str = ""
 
     testplayer : Character
@@ -57,10 +63,12 @@ class Data:
 
         def __init__(self, index=0):
             self.index = index
+            self.name = f"Dummy player {self.index}"
             self.available_events = []
     
-    def __init__(self):
-        self.mode = "select"
+    def __init__(self, isTest=False):
+        self.phase = "select"
+        self.isTest = isTest
         #character instance 하나를 testplayer에 저장한다. 디버그용.
         self.testplayer = Character("test player", "@", 30)
         self.testplayer.setVoice({
@@ -72,32 +80,39 @@ class Data:
         self.buff = Buff(self)
 
         self.fill_dummy()
+        self.generate_systemCommands()
         self.generate_testCommands()
+
+    def generate_systemCommands(self):
+        test_open_info = SystemCommand("(I)nfo", 'i', lambda data: data.open_emptyinfo(), main_mode='battlefield')
+        test_close_info = SystemCommand("(I)nfo close", 'i', lambda data:data.close_info(), main_mode='info')
+        test_proceed_turn = SystemCommand("(T)urn proceed", 't', lambda data: data.proceed_turn())
+
+        self.systemCommands = [
+            test_open_info,
+            test_close_info,
+            test_proceed_turn
+        ]
 
     def generate_testCommands(self):
         test_inputMessage = SystemCommand("(L)og", 'l', lambda data: data.add_log('test'))
         test_voiceChat = SystemCommand("(V)oice", 'v', lambda data: data.voiceChat(data.testplayer, "뭐라카노?", "_-^-."))
-        test_open_info = SystemCommand("(I)nfo", 'i', lambda data: data.open_emptyinfo(), 'battlefield')
-        test_close_info = SystemCommand("(I)nfo close", 'i', lambda data:data.close_info(), 'info')
         test_add_player = SystemCommand("(P)layer add", 'p', lambda data: data.add_player(name=f"player {len(data.players) + 1}", icon="A", HP=20))
         test_delete_player = SystemCommand("(R)id player", 'r', lambda data: data.delete_player(len(data.players) - 1))
         test_add_monster = SystemCommand("(M)onster add", 'm', lambda data: data.add_monster(name=f"dummymon", icon="M", HP=10))
         test_kill_monster = SystemCommand("(K)ill monster", 'k', lambda data: data.kill_monster(len(data.monsters) - 1))
         test_add_event = SystemCommand("(E)vent add", 'e', lambda data: data.add_sampleEvent())
         test_clear_event = SystemCommand("(F)inish event", 'f', lambda data: data.clear_event())
-        test_proceed_turn = SystemCommand("(T)urn proceed", 't', lambda data: data.proceed_turn())
+        
         self.testCommands = [
             test_inputMessage,
             test_voiceChat,
-            test_open_info,
-            test_close_info,
             test_add_player,
             test_delete_player,
             test_add_monster,
             test_kill_monster,
             test_add_event,
-            test_clear_event,
-            test_proceed_turn
+            test_clear_event
         ]
     
     def fill_dummy(self, given_index=None):
@@ -150,22 +165,15 @@ class Data:
             new_index += 1
         
     def make_commandList(self, main_mode:str):
-        '''commandbox 갱신 시 실행된다. get_command의 결과를 commandList에 추가한다.'''
-        commandList = {}
-        for entity in self.testCommands + self.players + self.monsters:
-            if hasattr(entity, 'when_active') and entity.when_active not in [main_mode, None]:
-                continue
-            #single command for single entity
-            command : tuple|None = entity.get_command(self.mode)
-            if type(command) == tuple and command[0] != None:
-                commandList.update(dict([command]))
-            self.commandList = commandList
+        '''commandbox 갱신 시 실행된다. 실행 가능한 개체를 commandList에 추가한다.'''
+        syscommand_list = self.systemCommands[:]
+        if self.isTest == True:
+            syscommand_list += self.testCommands
+        self.commandList = [entity for entity in syscommand_list + self.players + self.monsters if entity.has_command(self.phase, main_mode)]
     
     #key 입력 시 실행된다.
     def run_command(self, key:str, main_mode:str) -> tuple|str|None:
-        for entity in self.players + self.monsters + self.testCommands:
-            if hasattr(entity, 'when_active') and entity.when_active not in [main_mode, None]:
-                continue
+        for entity in self.commandList:
             if entity.get_key() == key:
                 #Creature 선택 시
                 if isinstance(entity, Character):
@@ -216,35 +224,43 @@ class Data:
         self.eventList = eventlist
 
     def proceed_turn(self):
-        survivors = [player for player in self.players if player.has_command(self.mode)]
-        if self.mode == 'select' and set(player.index for player in survivors) != {x + 1 for x in range(min(len(survivors), 4))}:
-            self.add_log("Select all character.\n")
-            return None
+        if self.phase == "select":
+            survivors = [player for player in self.players if not player.isDead()]
+            if set(player.index for player in survivors) != {x + 1 for x in range(min(len(survivors), 4))}:
+                self.add_log("Select all character.\n")
+            else:
+                self.phase = "process"
 
-        self.mode = "process"
-        if self.buff in self.eventList:
-            self.eventList.remove(self.buff) 
-        if self.eventList == []:
-            self.monsterIndexRefresh()
-            self.clear_dummy()
-            for player in self.players:
-                player.index = 0
-                player.check_status_turn()
-            self.fill_dummy()
-            self.make_eventList()
-            self.mode = 'select'
-            self.add_log("turn ended\n")
-        else:
-            log = self.clear_event(0)
-            for event in self.eventList:
-                if event.effects == [] or (event.origin != None and event.origin.isDead()):
-                    self.eventList.remove(event)
-                    del(event)
-            self.buff.refresh_buff(self)
-            if self.buff not in self.eventList and self.buff.effects != []:
+        if self.phase == "process":
+            #eventList 확인 위해 buff 잠시 제거
+            if self.buff in self.eventList:
+                self.eventList.remove(self.buff)
+
+            #수행할 event 남아 있음
+            if self.eventList != []:
+                self.clear_event(0)
+                for event in self.eventList:
+                    if event.effects == [] or (event.origin != None and event.origin.isDead()):
+                        self.add_log(f"{event.origin.name}'s event canceled!\n")
+                        self.eventList.remove(event)
+                        del(event)
+                self.buff.refresh_buff(self)
+
+            #eventList 비어 있음 == 턴 종료
+            if self.eventList == []:
+                self.monsterIndexRefresh()
+                self.clear_dummy()
+                for player in self.players:
+                    player.index = 0
+                    player.check_status_turn()
+                self.fill_dummy()
+                self.make_eventList()
+                self.phase = 'select'
+                self.add_log("turn ended\n")
+
+            #아직도 이벤트 남아 있음 -> 계속 턴 진행, buff 복구
+            elif self.buff not in self.eventList and self.buff.effects != []:
                 self.eventList.append(self.buff)
-            if log is str:
-                self.add_log(log)
 
     ### debug ##################################################################
     def add_log(self, text:str):

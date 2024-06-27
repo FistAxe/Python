@@ -58,7 +58,7 @@ class PrepareShield(Effect):
         self.whom = whom
 
         self._typ = 'fixed'
-        self._icon = '[bold]:blue_square:[/bold]'
+        self._icon = '🟦'
         self._color = 'shield_blue'
         self.value += 10
         self._content = f"[b blue]{'+' if self.value > 0 else '' }{self.value}[/b blue]"
@@ -144,99 +144,117 @@ class Goblin(Monster):
         super().__init__(self.name, self.icon, self.HP, key)
 
 #Character 추가
-class A_Protect(Event):
-    original_speed = -3
-    description = "Shield. Yield shield to get 10 shield."
 
-    @staticmethod
-    def trigger_condition(owner: Character | Monster, data: Data) -> int:
-        return index_trigger(owner, 1)
+
+class Andrew(Character):
+    name = 'Andrew'
+    icon = 'A'
+    HP = 12
+    key = 'a'
+    speed = 4
+    command = "(A)ndrew"
+
+    class A_Protect(Event):
+        original_speed = -3
+        description = "Shield. Yield shield to get 10 shield."
+
+        @staticmethod
+        def trigger_condition(owner: Character | Monster, data: Data) -> int:
+            return index_trigger(owner, 1)
    
-    target_with_effect = {
-        'self' : PrepareShield
-    }
+        target_with_effect = {
+            'self' : PrepareShield
+        }
 
-    def __init__(self, origin: Creature, data: Data):
-        self.effects = []
-        if origin != None:
-            self.origin = origin
-        self.set_speed()
-        #계수 추가 필요
-        new_effect = PrepareShield(origin)
-        self.effects.append(new_effect)
+        def __init__(self, origin: Creature, data: Data):
+            self.effects = []
+            if origin != None:
+                self.origin = origin
+            self.set_speed()
+            #계수 추가 필요
+            new_effect = PrepareShield(origin)
+            self.effects.append(new_effect)
 
-class A_SingleHit(Event):
-    original_speed = 2
-    description = 'Attack the most front enemy with melee damage.'
+    class A_SingleHit(Event):
+        original_speed = 2
+        description = 'Attack the most front enemy with melee damage.'
 
-    @staticmethod
-    def trigger_condition(owner: Character | Monster, data: Data) -> int:
-        return index_trigger(owner, 2)
+        @staticmethod
+        def trigger_condition(owner: Character | Monster, data: Data) -> int:
+            return index_trigger(owner, 2)
 
-    target_with_effect = {
-        'self' : 'attack',
-        'monster_1' : 'damage'
-    }
+        target_with_effect = {
+            'self' : 'attack',
+            'monster_1' : 'damage'
+        }
 
-class A_MultiHit(Event):
-    original_speed = 4
-    description = 'Attack all enemys with melee damage.'
+    class A_MultiHit(Event):
+        original_speed = 4
+        description = 'Attack all enemys with melee damage.'
 
-    @staticmethod
-    def trigger_condition(owner: Character | Monster, data: Data) -> int:
-        return index_trigger(owner, 3)
+        @staticmethod
+        def trigger_condition(owner: Character | Monster, data: Data) -> int:
+            return index_trigger(owner, 3)
 
-    target_with_effect = {
-        'self' : 'attack',
-        'monster_' : 'damage'
-    }
+        target_with_effect = {
+            'self' : 'attack',
+            'monster_' : 'damage'
+        }
 
-class A_Backup(Event):
-    original_speed = 6
-    description = 'attacks the most far enemy with melee damage.'
+    class A_Backup(Event):
+        original_speed = 6
+        description = 'attacks the most far enemy with melee damage.'
 
-    @staticmethod
-    def trigger_condition(owner: Character | Monster, data: Data) -> int:
-        return index_trigger(owner, 4)
+        @staticmethod
+        def trigger_condition(owner: Character | Monster, data: Data) -> int:
+            return index_trigger(owner, 4)
 
-    target_with_effect = {
-        'self' : 'attack',
-        'monster_-1' : 'damage'
-    }
-
-andrew = Character(
-    name = 'Andrew',
-    icon = 'A',
-    HP = 12,
-    key = 'a',
-    speed = 4,
-    command = "(A)ndrew",
+        target_with_effect = {
+            'self' : 'attack',
+            'monster_-1' : 'damage'
+        }
+    
     skillList = [A_Protect, A_SingleHit, A_MultiHit, A_Backup]
-)
 
-brian = Character(
-    name = 'Brian',
-    icon = 'B',
-    HP = 10,
-    key = 'b',
-    speed = 2,
+    def __init__(self):
+        super().__init__(self.name, self.icon, self.HP, self.speed, self.key, self.command, self.skillList)
+
+class Brian(Character):
+    name = 'Brian'
+    icon = 'B'
+    HP = 10
+    key = 'b'
+    speed = 2
     command = "(B)rian"
-)
 
-cinnamon = Character(
-    name = 'Cinnamon',
-    icon = 'C',
-    HP = 9,
-    key = 'c',
-    speed = 3,
+    skillList = []
+
+    def __init__(self):
+        super().__init__(self.name, self.icon, self.HP, self.speed, self.key, self.command, self.skillList)
+
+class Cinnamon(Character):
+    name = 'Cinnamon'
+    icon = 'C'
+    HP = 9
+    key = 'c'
+    speed = 3
     command = "(C)innamon"
-)
 
-dahlia = Character(
-    name = 'Dahlia',
-    icon = 'D',
-    HP = 7,
-    key = 'd',
-    speed = 1,
+    skillList = []
+
+    def __init__(self):
+        super().__init__(self.name, self.icon, self.HP, self.speed, self.key, self.command, self.skillList)
+
+class Dahlia(Character):
+    name = 'Dahlia'
+    icon = 'D'
+    HP = 7
+    key = 'd'
+    speed = 1
     command = "(D)ahlia"
-)
+
+    skillList = []
+
+    def __init__(self):
+        super().__init__(self.name, self.icon, self.HP, self.speed, self.key, self.command, self.skillList)
+

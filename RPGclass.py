@@ -218,11 +218,13 @@ class Creature:
     #중립
     typ : Literal['neutral', 'monster', 'character']= 'neutral'
     status : dict[str, bool|int|None]
+    is_active : True
     possible_status_list = [
         'dead',
         'shield',
         'hurt'
     ]
+    description = "A sample Creature object."
 
     def __init__(self, name:str, icon:str, HP:int, key:str|None=None):
         self.name = name
@@ -287,15 +289,16 @@ class Creature:
         else:
             return None
     
-    def has_command(self, mode:str):
+    def has_command(self, phase:str, main_mode:str):
+        '''기본적으로 command가 없음'''
         return False
     
-    def get_command(self, mode:str):
-        '''key와 command창의 str로 이루어진 command tuple을 얻는다.'''
-        if self.has_command(mode) and self.command != None:
-            return self.key, self.command
+    def get_command(self):
+        '''command 설명을 얻는다.'''
+        if self.command != None:
+            return self.command
         else:
-            return None
+            return ""
 
     def add_eventClass(self, eventClass:Type[Event]):
         self.available_events.append(eventClass)
@@ -323,6 +326,8 @@ class Monster(Creature):
 
     num : int = 0
     '''지금까지 생성된 monster의 수. 클래스 변수.'''
+
+    description = "A sample Monster object."
         
     class stab(Event):
         @staticmethod
@@ -362,10 +367,6 @@ class Monster(Creature):
         super().__init__(name, icon, HP, key)
         self.available_events.extend(self.skillList)
 
-    def has_command(self, mode:str):
-        '''기본적으로 command가 없음'''
-        return False
-
     def add_command(self, string:str):
         self.command = string
 
@@ -380,6 +381,7 @@ class Character(Creature):
         'sec' : 0.13
     }
     '''high, middle, low, sec'''
+    description = "A sample Character object."
 
     def __init__(self, name:str, icon:str, HP:int, speed:int=1, key:str|None=None, command:str|None=None, skillList:List[Event]|None = None):
         self.index = 0
@@ -395,10 +397,10 @@ class Character(Creature):
             self.voiceset = voiceset
         self.voice = voicefunc.voice(**self.voiceset)
 
-    def has_command(self, mode:str):
-        if mode == 'select' and 'dead' not in self.status:
+    def has_command(self, phase:str, main_mode:str):
+        if phase == 'select' and 'dead' not in self.status:
             return True
-        elif mode == 'process':
+        elif phase == 'process':
             return False
         else:
             return False
