@@ -7,7 +7,7 @@ class SystemCommand():
     key : str
     testMethod : Callable[[],str|tuple]
     
-    def __init__(self, command_str:str, key:str, testMethod:Callable|None = None, phase:str|None=None, main_mode:str|None=None):
+    def __init__(self, command_str:str, key:str|tuple[str], testMethod:Callable|None = None, phase:str|None=None, main_mode:str|None=None):
         self.command_str = command_str 
         self.key = key
         self.testMethod = testMethod
@@ -29,8 +29,11 @@ class SystemCommand():
     def get_key(self):
         return self.key
         
-    def run_method(self, data:'Data'):
-        return self.testMethod(data)
+    def run_method(self, data:'Data', key:str|None=None):
+        if key == None:
+            return self.testMethod(data)
+        else:
+            return self.testMethod(data, key)
 
 class Data:
     monsters : list[Monster] = []
@@ -43,7 +46,9 @@ class Data:
     isDialogOn : bool = True
     isBattlefieldOn : bool = True
     phase : Literal["select", "process"]
+    smallinfo_list : list[str] = ["Character", "Monster"]
     smallinfo_type : Literal["Character", "Monster"] = "Character"
+    smallinfo_size : Literal["small", "full"] = "small"
     raw_dialog : str = ""
 
     testplayer : Character
@@ -83,15 +88,18 @@ class Data:
         self.generate_systemCommands()
         self.generate_testCommands()
 
+    #-----------데이터 조작용 메서드--------------
     def generate_systemCommands(self):
-        test_open_info = SystemCommand("(I)nfo", 'i', lambda data: data.open_emptyinfo(), main_mode='battlefield')
-        test_close_info = SystemCommand("(I)nfo close", 'i', lambda data:data.close_info(), main_mode='info')
-        test_proceed_turn = SystemCommand("(T)urn proceed", 't', lambda data: data.proceed_turn())
+        sys_open_info = SystemCommand("(I)nfo", 'i', lambda data: data.open_emptyinfo(), main_mode='battlefield')
+        sys_close_info = SystemCommand("(I)nfo close", 'i', lambda data:data.close_info(), main_mode='info')
+        sys_proceed_turn = SystemCommand("(T)urn proceed", 't', lambda data: data.proceed_turn())
+        sys_control_arrow_key = SystemCommand("Arrow:info", ('left', 'right', 'up', 'down'), lambda data, key: data.control_smallinfo(key))
 
         self.systemCommands = [
-            test_open_info,
-            test_close_info,
-            test_proceed_turn
+            sys_open_info,
+            sys_close_info,
+            sys_proceed_turn,
+            sys_control_arrow_key
         ]
 
     def generate_testCommands(self):
@@ -174,7 +182,7 @@ class Data:
     #key 입력 시 실행된다.
     def run_command(self, key:str, main_mode:str) -> tuple|str|None:
         for entity in self.commandList:
-            if entity.get_key() == key:
+            if key in entity.get_key():
                 #Creature 선택 시
                 if isinstance(entity, Character):
                     if entity.index == 0:
@@ -186,7 +194,7 @@ class Data:
                     return None
                 #SystemCommand 선택 시
                 elif isinstance(entity, SystemCommand):
-                    output = entity.run_method(self)
+                    output = entity.run_method(self, key)
                     return output
         #일치하는 key가 없어 return문을 시행하지 못하면:
         self.add_log("No such key!\n")
@@ -223,6 +231,8 @@ class Data:
             eventlist.append(self.buff)
         self.eventList = eventlist
 
+    ### systemCommand ######################
+    # 턴 진행
     def proceed_turn(self):
         if self.phase == "select":
             survivors = [player for player in self.players if not player.isDead()]
@@ -261,6 +271,29 @@ class Data:
             #아직도 이벤트 남아 있음 -> 계속 턴 진행, buff 복구
             elif self.buff not in self.eventList and self.buff.effects != []:
                 self.eventList.append(self.buff)
+
+    # smallinfo 조작
+    def control_smallinfo(self, key:Literal['left', 'right', 'up', 'down']):
+        if key in ['left', 'right']:
+            try:
+                index = self.smallinfo_list.index(self.smallinfo_type)
+                index = index + 1 if key == 'right' else index - 1
+                title_type_length = len(self.smallinfo_list)
+                if index < 0:
+                    index += title_type_length
+                if index >= title_type_length:
+                    index -= title_type_length
+            except ValueError:
+                index = 0
+            self.smallinfo_type = self.smallinfo_list[index]
+
+        elif key in ['up', 'down']:
+            if key == 'up' and self.smallinfo_size == 'small':
+                self.smallinfo_size = 'full'
+            elif key == 'down' and self.smallinfo_size == 'full':
+                self.smallinfo_size = 'small'
+        else:
+            self.add_log("arrow method didn't get arrow input!\n")
 
     ### debug ##################################################################
     def add_log(self, text:str):

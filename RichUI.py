@@ -19,6 +19,7 @@ colorDict = {
     'shield_blue' : '#0D2D46',
     'dark_grey' : '#101010',
     'unselected' : '#909070',
+    'inactive' : '#404040',
     'highlight_yellow' : '#EEEE80',
     'highlight_red' : '#FF8080'
 }
@@ -50,8 +51,12 @@ def get_status_emoji(status:dict):
         return "".join(emoji)
 
 class Box(Panel):
-    def __init__(self, update="Box called without its renderable", name:str="Box"):
-        super().__init__(update, title=f"[bold italic]{name}[/bold italic]", title_align="left")
+    def __init__(self, update="Box called without its renderable", name:str|Text="Box"):
+        if isinstance(name, str):
+            super().__init__(update, title=f"[bold italic]{name}[/bold italic]", title_align="left")
+        else:
+            name.stylize('bold italic')
+            super().__init__(update, title=name, title_align='left')
 
 class Battlefield(Box):
     #Panel(get_battlefield())
@@ -231,6 +236,16 @@ class Battlefield(Box):
                 smallinfo_list = data.players
             elif data.smallinfo_type == 'Monster':
                 smallinfo_list = data.monsters
+            
+            smallinfo_title = Text()
+            smallinfo_title_dict : dict[str, Text]= {}
+            for title in data.smallinfo_list:
+                if title == data.smallinfo_type:
+                    smallinfo_title_dict[title] = Text(f"{title} ")
+                else:
+                    smallinfo_title_dict[title] = Text(f"{title} ", style=colorDict["inactive"])
+                smallinfo_title.append(smallinfo_title_dict[title])
+
             smallinfo = Text()
             for creature in smallinfo_list:
                 selected = False if creature.index == 0 else True
@@ -248,23 +263,25 @@ class Battlefield(Box):
                 else:
                     smallinfo.append("\n")
 
-        elif data == None:
-            table = Panel("Data is 'None'")
-            smallinfo = "Data is 'None'"
-        elif type(data) == str:
-            table = Panel(f"{data}")
-            smallinfo = " "
-        else:
-            table = Panel("Data is not 'Data'")
-            smallinfo = "Wrong Data"
-        
-        insidegrid = Layout()
-        insidegrid.split_column(
-            Layout(table, name="table"),
-            Layout(Box(smallinfo, name="Info"), name="smallinfo")
-        )
+            insidegrid = Layout()
+            if data.smallinfo_size == 'small':
+                insidegrid.split_column(
+                    Layout(table, name="table"),
+                    Layout(Box(smallinfo, name=smallinfo_title), name="smallinfo")
+                )
+                insidegrid["smallinfo"].size = 6
 
-        insidegrid["smallinfo"].size = 6
+            elif data.smallinfo_size == 'full':
+                insidegrid.split_column(
+                    Layout(Box(smallinfo, name=smallinfo_title), name="smallinfo")
+                )
+
+        elif data == None:
+            insidegrid = Layout(Panel("Data is 'None'"))
+        elif type(data) == str:
+            insidegrid = Layout(Panel(f"{data}"))
+        else:
+            insidegrid = Layout(Panel("Data is not 'Data'"))
 
         super().__init__(insidegrid, name="Battlefield")
 
