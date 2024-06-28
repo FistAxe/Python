@@ -13,6 +13,10 @@ class SystemCommand():
         self.testMethod = testMethod
         self.active_phase = phase
         self.active_mode = main_mode
+        if isinstance(key, tuple):
+            self._multikey = True
+        else:
+            self._multikey = False
 
     def has_command(self, phase:str, main_mode:str):
         if self.active_phase in (phase, None) and self.active_mode in (main_mode, None):
@@ -30,7 +34,7 @@ class SystemCommand():
         return self.key
         
     def run_method(self, data:'Data', key:str|None=None):
-        if key == None:
+        if key == None or self._multikey == False:
             return self.testMethod(data)
         else:
             return self.testMethod(data, key)
@@ -182,7 +186,9 @@ class Data:
     #key 입력 시 실행된다.
     def run_command(self, key:str, main_mode:str) -> tuple|str|None:
         for entity in self.commandList:
-            if key in entity.get_key():
+            if entity.get_key() == None:
+                continue
+            elif key in entity.get_key():
                 #Creature 선택 시
                 if isinstance(entity, Character):
                     if entity.index == 0:
