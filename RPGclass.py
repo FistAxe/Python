@@ -13,9 +13,22 @@ class Effect:
     _icon : str
     _content : str
     _color : str
+    _modifier : List
 
-    def __init__(self, target:'Creature', effect_type:str|None=None, value:int|None=None):
+    @classmethod
+    def modify(cls, modifier=None):
+        class ModifiedEffect(cls):
+            pass
+        new_effect = ModifiedEffect
+        new_effect._modifier = modifier
+        return new_effect
+    
+    def __init__(self, target:'Creature', effect_type:str|None=None, value:int|None=None, origin:Union['Creature', None]=None):
+        self.apply(target, effect_type, value, origin)
+    
+    def apply(self, target:'Creature', effect_type:str|None=None, value:int|None=None, origin:Union['Creature', None]=None):
         self.target = target
+        self.origin = origin
         self.value = 0 if value == None else value
 
 #       for coeff, formula in {'atk':atk, 'defence':defence, 'mag':mag, 'mind':mind}.items():
@@ -73,8 +86,8 @@ class Event:
     '''실제 이용되는 속도.'''
     origin : Union['Character', 'Monster']
     '''이벤트의 원인.'''
-    target_with_effect:Dict[str, str]={
-        "enemy_1" : "damage_7"
+    target_with_effect:Dict[str, str|Effect|tuple]={
+        "self" : "test"
     }
     '''{ '대상1 str' : '효과1 str', ...}'''
     description : str = 'dummy event.'
@@ -100,7 +113,6 @@ class Event:
             self.set_speed()
             self.calculate_effects(data)
 
-
     def set_speed(self):
         '''SubEvent에서 override할 것. 기본 속도는 origin의 속도.'''
         if hasattr(self.origin, 'speed'):
@@ -111,7 +123,6 @@ class Event:
             self.speed = 0
 
     def calculate_effects(self, data:'Data'):
-        value = None
         if self.target_with_effect != None:
             for target, effect in self.target_with_effect.items():
                 typ = target.split('_')
@@ -124,7 +135,6 @@ class Event:
                 if typ == 'self':
                     new_effect = self.make_effect(self.origin, effect)
                     self.effects.append(new_effect)
-                    value = new_effect.value
                     pass
                 elif typ == 'friend':
                     typ = 'player' if self.origin.typ == 'character' else 'monster'
@@ -135,24 +145,28 @@ class Event:
                     for target_index in target_list:
                         for player in data.players:
                             if player.index in [1, 2, 3, 4] and player.index == target_index:
-                                new_effect = self.make_effect(player, effect, value)
+                                new_effect = self.make_effect(player, effect)
                                 self.effects.append(new_effect)
                 elif typ == 'monster':
-                    max_index = len(data.monsters)
-                    target_list = get_list_from(num, max_index)
+                    target_list = get_list_from(num, len(data.monsters))
                     for index in target_list:
                         try:
-                            new_effect = self.make_effect(data.monsters[index - 1], effect, value)
+                            new_effect = self.make_effect(data.monsters[index - 1], effect)
                             self.effects.append(new_effect)
                         except IndexError:
                             pass
     
-    def make_effect(self, player:'Creature', effect:Effect|str, value:int|None=None):
+    def make_effect(self, target:'Creature', effect:Effect|tuple|str):
         '''Effect의 instance를 반환한다.'''
+        #Effect instance 아님, effect_type 제공해 생성
         if type(effect) is str:
-            return Effect(player, effect, value)
+            return Effect(target, effect_type=effect, origin=self.origin)
+        #Effect instance, 주어진 instance 사용
+        elif type(effect) is tuple:
+            e = effect[0].modify(*effect[1:])
+            return e(target, origin=self.origin)
         elif issubclass(effect, Effect):
-            return effect(player, value)
+            return effect(target, origin=self.origin)
         else:
             raise TypeError
 
@@ -231,6 +245,8 @@ class Creature:
         self.icon = icon
         self.HP = self.max_HP = HP
         self.speed = 1
+        self.atk = 0
+
         self.key = key
         self.status = {}
         self.command : str = f"Blank {self.name} command"

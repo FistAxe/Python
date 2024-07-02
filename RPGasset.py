@@ -1,5 +1,6 @@
 from RPGclass import Character, Creature, Event, Monster, Effect
 from RPGdata import Data
+from typing import Callable
 
 # coefficient={'type1':'coeff1', 'type2':'coeff2', ... } : value에 수정되는 값. type의 값*coeff 만큼이 value에 더해진다.
 
@@ -51,24 +52,56 @@ class SubEffect(Effect):
         return self.target.isDead()
 '''
 
-class PrepareShield(Effect):
-    def __init__(self, target: Creature, value: int | None = None, whom:list[Creature]|None=None):
+class MeleeDamage(Effect):
+    atk_modifier : Callable[[int], int]|None = None
+
+    @classmethod
+    def modify(self, atk_modifier:Callable[[int], int]|None=None):
+        new_class = super().modify()
+        if atk_modifier != None:
+            new_class.atk_modifier = atk_modifier
+        return new_class
+
+    def __init__(self, target: Creature, value: int | None = None, origin: Creature|None = None):
         self.target = target
-        self.value = 0 if value == None else value
-        self.whom = whom
+
+        if value != None:
+            self.value = value
+        elif origin != None:
+            self.origin = origin
+            if hasattr(self.origin, 'atk') and hasattr(self, 'atk_modifier'):
+                if self.atk_modifier == None:
+                    self.value = 0 - self.origin.atk
+                else:
+                    self.value = 0 - int(self.atk_modifier(self.origin.atk))
+            else:
+                self.value = 0
+
+        self._icon = '⚔️'
+        self._color = 'bg_damage_red'
+        self._content = f'[b red]{self.value}[/b red]'
+
+class PrepareShield(Effect):
+
+    @classmethod
+    def modify(cls, fixed:int|None=None, modifier:Callable|None=None):
+        new_class = super().modify(modifier)
+        new_class.value = fixed if fixed != None else 10
+        return new_class
+
+    def __init__(self, target: Creature, value: int | None = None, origin=None):
+        self.target = target
+        self.origin = origin
+        if value != None:
+            self.value += value
 
         self._typ = 'fixed'
         self._icon = '🟦'
-        self._color = 'shield_blue'
-        self.value += 10
+        self._color = 'shield_blue' if target != origin else 'bg_attack_yellow'
         self._content = f"[b blue]{'+' if self.value > 0 else '' }{self.value}[/b blue]"
 
     def execute(self, data: Data):
-        if self.whom != None:
-            for target in self.whom:
-                return target.add_status('shield', self.value, 1)
-        else:
-            return self.target.add_status('shield', self.value, 1)
+        return self.target.add_status('shield', self.value, 1)
 
 #trigger 추가
 def index_trigger(owner:Character|Monster, index:int):
@@ -144,12 +177,17 @@ class Goblin(Monster):
 
 #Character 추가
 class Andrew(Character):
-    name = 'Andrew'
-    icon = 'A'
-    HP = 12
-    key = 'a'
-    speed = 4
-    command = "(A)ndrew"
+    def __init__(self):
+        super().__init__(
+            name = 'Andrew',
+            icon = 'A',
+            HP = 12,
+            key = 'a',
+            speed = 4,
+            command = "(A)ndrew",
+            skillList=self.skillList
+        )
+        self.atk = 7
 
     class A_Protect(Event):
         original_speed = -3
@@ -160,17 +198,8 @@ class Andrew(Character):
             return index_trigger(owner, 1)
    
         target_with_effect = {
-            'self' : PrepareShield
+            'self' : (PrepareShield, 10)
         }
-
-        def __init__(self, origin: Creature, data: Data):
-            self.effects = []
-            if origin != None:
-                self.origin = origin
-            self.set_speed()
-            #계수 추가 필요
-            new_effect = PrepareShield(origin)
-            self.effects.append(new_effect)
 
     class A_SingleHit(Event):
         original_speed = 2
@@ -182,7 +211,7 @@ class Andrew(Character):
 
         target_with_effect = {
             'self' : 'attack',
-            'monster_1' : 'damage'
+            'monster_1' : MeleeDamage
         }
 
     class A_MultiHit(Event):
@@ -195,7 +224,7 @@ class Andrew(Character):
 
         target_with_effect = {
             'self' : 'attack',
-            'monster_' : 'damage'
+            'monster_' : MeleeDamage
         }
 
     class A_Backup(Event):
@@ -208,26 +237,77 @@ class Andrew(Character):
 
         target_with_effect = {
             'self' : 'attack',
-            'monster_-1' : 'damage'
+            'monster_-1' : MeleeDamage
         }
     
     skillList = [A_Protect, A_SingleHit, A_MultiHit, A_Backup]
 
-    def __init__(self):
-        super().__init__(self.name, self.icon, self.HP, self.speed, self.key, self.command, self.skillList)
-
 class Brian(Character):
-    name = 'Brian'
-    icon = 'B'
-    HP = 10
-    key = 'b'
-    speed = 2
-    command = "(B)rian"
-
-    skillList = []
-
     def __init__(self):
-        super().__init__(self.name, self.icon, self.HP, self.speed, self.key, self.command, self.skillList)
+        super().__init__(
+            name = 'Brian',
+            icon = 'B',
+            HP = 10,
+            key = 'b',
+            speed = 2,
+            command = "(B)rian",
+            skillList = self.skillList
+        )
+        self.atk = 5
+
+    class B_Assult(Event):
+        original_speed = -1
+        description = 'Assult the closest enemy with melee damage.'
+
+        @staticmethod
+        def trigger_condition(owner: Character | Monster, data: Data) -> int:
+            return index_trigger(owner, 1)
+        
+        target_with_effect = {
+            'self' : 'attack',
+            'monster_1' : (MeleeDamage, (lambda effect, atk:atk*1.2))
+        }
+
+    class B_BasicAttack(Event):
+        original_speed = 4
+        description = 'Normal attack. Slow and weak. x0.5 melee damage.'
+
+        @staticmethod
+        def trigger_condition(owner: Character | Monster, data: Data) -> int:
+            return index_trigger(owner, 2)
+        
+        target_with_effect = {
+            'self' : 'attack',
+            'monster_2' : (MeleeDamage, (lambda effect, atk:atk*0.5))
+        }
+
+    class B_Revenge(Event):
+        original_speed = 3
+        description = 'Attacks 2nd enemy. If enemy is inactive, x1.5 melee dmg.'
+
+        @staticmethod
+        def trigger_condition(owner: Character | Monster, data: Data) -> int:
+            return index_trigger(owner, 3)
+        
+        target_with_effect = {
+            'self' : 'attack',
+            'monster_2' : (MeleeDamage, (lambda effect, atk:atk*1.5))
+        }
+
+    class B_Ambush(Event):
+        original_speed = 4
+        description = 'Ambush 3rd and 4th enemy with melee dmg.'
+
+        @staticmethod
+        def trigger_condition(owner: Character | Monster, data: Data) -> int:
+            return index_trigger(owner, 4)
+        
+        target_with_effect = {
+            'self' : 'attack',
+            'monster_3:' : MeleeDamage
+        }
+
+    skillList = [B_Assult, B_BasicAttack, B_Revenge, B_Ambush]
 
 class Cinnamon(Character):
     name = 'Cinnamon'

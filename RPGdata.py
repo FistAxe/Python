@@ -167,7 +167,7 @@ class Data:
     def monsterIndexRefresh(self):
         '''monsters 중 HP가 0인 개체를 제거한다. 아니면 index = 1부터 재배열한다.'''
         #HP 0 제거
-        for monster in list(filter(lambda mon : mon.HP == 0, self.monsters)):
+        for monster in list(filter(lambda mon : mon.HP <= 0, self.monsters)):
             self.monsters.remove(monster)
             del(monster)
         #monsters 순서대로 index 재부여
