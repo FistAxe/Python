@@ -1,4 +1,4 @@
-from typing import Literal, Callable
+from typing import Literal, Callable, Type
 from RPGclass import Event, Monster, Character, Buff
 
 #Command의 뒤에 dataMethod와 필요한 매개변수를 lambda로 붙여, key 입력 시 시행한다.
@@ -50,7 +50,7 @@ class Data:
     isDialogOn : bool = True
     isBattlefieldOn : bool = True
     phase : Literal["select", "process"]
-    smallinfo_list : list[str] = ["Character", "Monster"]
+    smallinfo_titles : list[str] = ["Character", "Monster"]
     smallinfo_type : Literal["Character", "Monster"] = "Character"
     smallinfo_size : Literal["small", "full"] = "small"
     raw_dialog : str = ""
@@ -282,16 +282,16 @@ class Data:
     def control_smallinfo(self, key:Literal['left', 'right', 'up', 'down']):
         if key in ['left', 'right']:
             try:
-                index = self.smallinfo_list.index(self.smallinfo_type)
+                index = self.smallinfo_titles.index(self.smallinfo_type)
                 index = index + 1 if key == 'right' else index - 1
-                title_type_length = len(self.smallinfo_list)
+                title_type_length = len(self.smallinfo_titles)
                 if index < 0:
                     index += title_type_length
                 if index >= title_type_length:
                     index -= title_type_length
             except ValueError:
                 index = 0
-            self.smallinfo_type = self.smallinfo_list[index]
+            self.smallinfo_type = self.smallinfo_titles[index]
 
         elif key in ['up', 'down']:
             if key == 'up' and self.smallinfo_size == 'small':
@@ -349,14 +349,21 @@ class Data:
         self.add_log(f"Character \'{new_creature.name}\' was added.\n")
 
     #적군 추가
-    def add_monster(self, monster:Monster|None=None, name:str='monster', icon:str='M', HP:int=10):
+    def add_monster(self, monster:Type[Monster]|Monster|None=None, name:str='monster', icon:str='M', HP:int=10):
         #템플릿이 있으면 복사
-        if monster != None:
+        if isinstance(monster, Monster):
             new_creature = monster
+
         #아니면 새로 생성
-        else:
+        elif monster == None:
             new_creature = Monster(name, icon, HP)
             self.testplayer = new_creature
+
+        elif issubclass(monster, Monster) or monster == Monster:
+            new_creature = monster()
+
+        else:
+            raise TypeError
         
         #index 설정
         new_creature.index = len(self.monsters) + 1

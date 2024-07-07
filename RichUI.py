@@ -216,36 +216,40 @@ class Battlefield(Box):
                     *list(self.eventLayoutGen(layout.owner, data.eventList))
                 )
 
+            #event에 time 추가.
             table["middle_event"].split_column(
                 *list(self.timeLayoutGen(data.eventList))
             )
 
+            #가장 빠른 개체 색칠
             if data.eventList != []:
                 now = data.eventList[0].origin
                 if now in data.players:
                     table[f"{now.name}_field"].update(
-                        Panel(Align(f"{now.icon}", align="center"), box=box.HEAVY, border_style=f"blink {colorDict['highlight_yellow']}")
+                        Panel(Align(f"{now.icon}", align="center"), box=box.HEAVY, border_style=f"{colorDict['highlight_yellow']}")
                         )
                 elif now in data.monsters:
                     table[f"{now.name}_field"].update(
-                        Panel(Align(f"{now.icon}", align="center"), box=box.HEAVY, border_style=f"blink {colorDict['highlight_red']}")
+                        Panel(Align(f"{now.icon}", align="center"), box=box.HEAVY, border_style=f"{colorDict['highlight_red']}")
                         )
 
-            #Info panel 설정
+            #Info panel 종류 설정
             if data.smallinfo_type == 'Character':
-                smallinfo_list = data.players
+                smallinfo_list = [player for player in data.players if not hasattr(player, 'dummy')]
             elif data.smallinfo_type == 'Monster':
                 smallinfo_list = data.monsters
             
+            #Info panel 타이틀 설정
             smallinfo_title = Text()
             smallinfo_title_dict : dict[str, Text]= {}
-            for title in data.smallinfo_list:
+            for title in data.smallinfo_titles:
                 if title == data.smallinfo_type:
                     smallinfo_title_dict[title] = Text(f"{title} ")
                 else:
                     smallinfo_title_dict[title] = Text(f"{title} ", style=colorDict["inactive"])
                 smallinfo_title.append(smallinfo_title_dict[title])
 
+            #Info panel 내용 생성
             smallinfo = Text()
             for creature in smallinfo_list:
                 selected = False if creature.index == 0 else True
@@ -263,6 +267,7 @@ class Battlefield(Box):
                 else:
                     smallinfo.append("\n")
 
+            #최종 insidegrid 생성
             insidegrid = Layout()
             if data.smallinfo_size == 'small':
                 insidegrid.split_column(
@@ -276,6 +281,7 @@ class Battlefield(Box):
                     Layout(Box(smallinfo, name=smallinfo_title), name="smallinfo")
                 )
 
+        #if data != Data
         elif data == None:
             insidegrid = Layout(Panel("Data is 'None'"))
         elif type(data) == str:
@@ -283,6 +289,7 @@ class Battlefield(Box):
         else:
             insidegrid = Layout(Panel("Data is not 'Data'"))
 
+        #최종 battlefield Layout 생성
         super().__init__(insidegrid, name="Battlefield")
 
 class Dialog(Box):
