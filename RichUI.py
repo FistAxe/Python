@@ -250,22 +250,32 @@ class Battlefield(Box):
                 smallinfo_title.append(smallinfo_title_dict[title])
 
             #Info panel 내용 생성
-            smallinfo = Text()
+            smallinfo_lines : List[Text] = []
             for creature in smallinfo_list:
+                line = Text()
                 selected = False if creature.index == 0 else True
                 if selected == True:
-                    smallinfo.append(f"{creature.name:<10}")
+                    line.append(f"{creature.name:<10}")
                 elif 'dead' in creature.status:
-                    smallinfo.append(f"{creature.name:<10}", colorDict['HP_red'])
+                    line.append(f"{creature.name:<10}", colorDict['HP_red'])
                 else:
-                    smallinfo.append(f"{creature.name:<10}", colorDict["unselected"])
+                    line.append(f"{creature.name:<10}", colorDict["unselected"])
+                
                 emoji = Text(f"{get_status_emoji(creature.status)}")
                 emoji.align(align='left', width=8)
-                smallinfo.append(emoji)
+                line.append(emoji)
+
                 if selected == True:
-                    smallinfo.append(f"{'No description.' if creature.readyevent == None else creature.readyevent.description}\n")
-                else:
-                    smallinfo.append("\n")
+                    line.append(f"{'No event.' if creature.readyevent == None else creature.readyevent.description}")
+
+                smallinfo_lines.append(line)
+
+            smallinfo = Layout()
+            scroll = '▼' if len(smallinfo_list) > 4 and data.smallinfo_size == 'small' else ''
+            smallinfo.split_row(
+                Layout(Group(*smallinfo_lines)),
+                Layout(Align(scroll, align='right', vertical='bottom'), size=1)
+            )
 
             #최종 insidegrid 생성
             insidegrid = Layout()
@@ -277,7 +287,7 @@ class Battlefield(Box):
                 insidegrid["smallinfo"].size = 6
 
             elif data.smallinfo_size == 'full':
-                insidegrid.split_column(
+                insidegrid.split_row(
                     Layout(Box(smallinfo, name=smallinfo_title), name="smallinfo")
                 )
 

@@ -250,8 +250,7 @@ class Brian(Character):
             HP = 10,
             key = 'b',
             speed = 2,
-            command = "(B)rian",
-            skillList = self.skillList
+            command = "(B)rian"
         )
         self.atk = 5
 
@@ -317,10 +316,23 @@ class Cinnamon(Character):
     speed = 3
     command = "(C)innamon"
 
-    skillList = []
+    class C_1(Event):
+        pass
+
+    class C_2(Event):
+        pass
+
+    class C_3(Event):
+        pass
+
+    class C_4(Event):
+        pass
+
+    skillList = [C_1, C_2, C_3, C_4]
 
     def __init__(self):
         super().__init__(self.name, self.icon, self.HP, self.speed, self.key, self.command, self.skillList)
+        self.atk = 4
 
 class Dahlia(Character):
     name = 'Dahlia'
@@ -330,8 +342,21 @@ class Dahlia(Character):
     speed = 1
     command = "(D)ahlia"
 
-    skillList = []
+    class D_1(Event):
+        pass
+
+    class D_2(Event):
+        pass
+
+    class D_3(Event):
+        pass
+
+    class D_4(Event):
+        pass
+
+    skillList = [D_1, D_2, D_3, D_4]
 
     def __init__(self):
         super().__init__(self.name, self.icon, self.HP, self.speed, self.key, self.command, self.skillList)
+        self.atk = 3
 

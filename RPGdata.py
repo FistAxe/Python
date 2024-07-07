@@ -67,13 +67,13 @@ class Data:
         hascommand = False
         command = None
         status = {}
+        skillList = []
         #Only added in here
         dummy = True
 
         def __init__(self, index=0):
             self.index = index
             self.name = f"Dummy player {self.index}"
-            self.available_events = []
     
     def __init__(self, isTest=False):
         self.phase = "select"

@@ -230,9 +230,10 @@ class Buff(Event):
 
 class Creature:
     #중립
-    typ : Literal['neutral', 'monster', 'character']= 'neutral'
+    typ : Literal['neutral', 'monster', 'character'] = 'neutral'
     status : dict[str, bool|int|None]
     is_active : True
+    skillList : List[Type[Event]] = []
     possible_status_list = [
         'dead',
         'shield',
@@ -246,11 +247,10 @@ class Creature:
         self.HP = self.max_HP = HP
         self.speed = 1
         self.atk = 0
-
         self.key = key
         self.status = {}
         self.command : str = f"Blank {self.name} command"
-        self.available_events : List[Type[Event]]=[]
+
         self.status_duration_list : list[Dict[Literal['name', 'turn', 'value'], int|str]] = []
         '''name:status 이름, turn:남은 턴 수, value:복귀할 양'''
         self.readyevent : Event|None = None
@@ -317,17 +317,17 @@ class Creature:
             return ""
 
     def add_eventClass(self, eventClass:Type[Event]):
-        self.available_events.append(eventClass)
+        self.skillList.append(eventClass)
 
     def get_event(self, data:'Data'):
         '''data의 값을 자신의 eventClass에 순서대로 대입해, 가장 높은 우선순위의 eventClass를 반환한다.'''
         priority = 0
         event = None
-        for eventClass in self.available_events:
-            buf_prior = eventClass.trigger_condition(self, data)
+        for eventclass in self.skillList:
+            buf_prior = eventclass.trigger_condition(self, data)
             if buf_prior > priority:
                 priority = buf_prior
-                event = eventClass(self, data)
+                event = eventclass(self, data)
         self.readyevent = event
         return event
     
@@ -377,11 +377,11 @@ class Monster(Creature):
         def get_speed(self):
             return 7
 
-    skillList : Event = [stab, poke]
+    skillList : List[Event] = [stab, poke]
 
     def __init__(self, name:str, icon:str, HP:int, key:str|None=None):
         super().__init__(name, icon, HP, key)
-        self.available_events.extend(self.skillList)
+        self.skillList.extend(self.skillList)
 
     def add_command(self, string:str):
         self.command = string
@@ -405,7 +405,7 @@ class Character(Creature):
         self.speed = speed
         self.command = command
         if skillList != None:
-            self.available_events = skillList
+            self.skillList = skillList
 
     #player의 특징: 목소리 나옴
     def setVoice(self, voiceset:dict|None=None):
@@ -434,7 +434,7 @@ def get_list_from(string:str, max:int):
         buf = string.split(",")
         for num in buf:
             #"monster_i" 형 : i 번째 index.
-            if num.isdecimal():
+            if ':' not in num:
                 intnum = int(num)
                 if intnum < 0:
                     intnum = max + intnum + 1
@@ -453,6 +453,8 @@ def get_list_from(string:str, max:int):
                 elif first.isdecimal() and last == "":
                     for i in range(int(first), max + 1):
                         numlist.append(i)
+            else:
+                raise ValueError
     #중복 제거
     return list(set(numlist))
 
