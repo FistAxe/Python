@@ -1,217 +1,150 @@
-# Base class for all game components
-class GameComponent:
-    def __init__(self, name, description):
+LOSE = 'lose'
+
+class Card:
+    def __init__(self, name='default card'):
         self.name = name
-        self.description = description
-
-    def __str__(self):
-        return f"{self.name}: {self.description}"
-
-# Card class for all card classes
-class Card(GameComponent):
-    def __init__(self, name, description, mana=False):
-        super().__init__(name, description)
-        self.mana = mana
-
-# Zone class, base for all zones (Main Zone, Sub Zone, etc.)
-class Zone(GameComponent):
-    def __init__(self, name, description, has_mana_pool=True):
-        super().__init__(name, description)
-        self.mana_pool = {'R': 0, 'Y': 0, 'B': 0} if has_mana_pool else False  # Determines if the Zone has a Mana Pool
-        self.cards = []
-
-    def let(self, card:Card):
-        # Stack action - you let a card into the zone
-        self.cards.append(card)
-        if type(card.mana) == dict:
-            self.mana_pool += card.mana
-
-    def collapse(self):
-        # Zone collapses if certain conditions are met
-        pass
-
-    def move(self, card, target_zone):
-        # Move card between Zones (treated as Letting)
-        pass
-
-
-# Main Zone class, inherits from Zone
-class MainZone(Zone):
-    def __init__(self):
-        super().__init__("Main Zone", "The primary Zone for performing attacks and critical actions.")
-
-    def attack(self, creature):
-        # Perform Attack with creature
-        pass
-
-
-# Sub Zone class, inherits from Zone
-class SubZone(Zone):
-    def __init__(self):
-        super().__init__("Sub Zone", "A secondary Zone in the Row, where creatures can't attack but can be targeted.")
-
-    def block(self, creature):
-        # Blocking a creature with a Sub Zone creature
-        pass
-
-
-# Base class for all Actions
-class Action:
-    def __init__(self, name, actor, target=None, speed=0):
-        self.name = name
-        self.actor = actor
-        self.target = target
-        self.speed = speed
-
-    def perform(self, board):
-        raise NotImplementedError("Each action must implement its perform method.")
-
-
-# Specific Actions
-class DrawAction(Action):
-    def __init__(self, actor, num_cards):
-        super().__init__("Draw", actor)
-        self.num_cards = num_cards
-
-    def perform(self, board):
-        drawn_cards = self.actor.draw(self.num_cards)
-        print(f"{self.actor} drew {len(drawn_cards)} cards.")
-        return drawn_cards
-
-
-class AttackAction(Action):
-    def __init__(self, attacker, target):
-        super().__init__("Attack", attacker, target)
-
-    def perform(self, board):
-        if self.target:
-            print(f"{self.actor.name} attacks {self.target.name}.")
-        else:
-            print(f"{self.actor.name} attacks directly.")
-        # Implement combat logic
-
-
-class CastAction(Action):
-    def __init__(self, spell, target=None, speed=0):
-        super().__init__("Cast", spell, target, speed)
-
-    def perform(self, board):
-        print(f"{self.actor.name} casts a spell.")
-        # Implement spell logic
-
-
-class ActivateAction(Action):
-    def __init__(self, artifact):
-        super().__init__("Activate", artifact)
-
-    def perform(self, board):
-        print(f"{self.actor.name} activates an artifact.")
-        # Implement activation logic
 
 class Creature(Card):
-    def __init__(self, name, ATK, SPD):
-        super().__init__(name, "A creature card.")
-        self.ATK = ATK
-        self.SPD = SPD
-        self.has_attacked = False
-
-    def attack(self, target, board):
-        attack_action = AttackAction(self, target)
-        board.queue_action(attack_action)
-
+    def __init__(self, name='default creature'):
+        super().__init__(name)
 
 class Spell(Card):
-    def __init__(self, name, effect, speed=0):
-        super().__init__(name, "A spell card.")
-        self.effect = effect
-        self.speed = speed
-
-    def cast(self, target, board):
-        cast_action = CastAction(self, target, self.speed)
-        board.queue_action(cast_action)
-
+    def __init__(self, name='default spell'):
+        super().__init__(name)
 
 class Artifact(Card):
-    def __init__(self, name, effect):
-        super().__init__(name, "An artifact card.")
-        self.effect = effect
+    def __init__(self, name='default artifact'):
+        super().__init__(name)
 
-    def activate(self, board):
-        activate_action = ActivateAction(self)
-        board.queue_action(activate_action)
+class Zone:
+    def __init__(self, halfboard:'HalfBoard'):
+        self.name = 'error: not specific zone'
+        self.cards = []
+        self.halfboard = halfboard
 
+class Deck:
+    def __init__(self, halfboard):
+        self.cards = []
+        self.halfboard = halfboard
 
-# Row class for the Sub Zones area
-class Row(GameComponent):
-    def __init__(self, name, description):
-        super().__init__(name, name if description == None else description)
-        self.sub_zones = []  # List to hold Sub Zones
+    def pop(self, num):
+        try:
+            pops = []
+            for _ in num:
+                pops += self.cards.pop()
+            return pops
+        except IndexError:
+            return 'Deck ran out!'
 
-    def create_sub_zone(self):
-        sub_zone = SubZone()
-        self.sub_zones.append(sub_zone)
-        return sub_zone
+class Graveyard:
+    def __init__(self, halfboard):
+        self.cards = []
+        self.halfboard = halfboard
 
+class MainZone(Zone):
+    def __init__(self, halfboard:'HalfBoard'):
+        super().__init__(halfboard)
+        self.name = f"{self.halfboard.name}'s Main Zone"
 
-# HalfBoard class to represent each player's half of the board
-class HalfBoard(GameComponent):
-    def __init__(self, name, description=None):
-        super().__init__(name, name if description == None else description)
+class SubZone(Zone):
+    def __init__(self, halfboard):
+        super().__init__(halfboard)
+        self.suborder = self.halfboard.get_suborder()
+        self.name = f"{self.halfboard.name}'s Main Zone {self.suborder}"
+
+class Row:
+    def __init__(self, halfboard:'HalfBoard'):
+        self.halfboard = halfboard
+        self.name = f"{self.halfboard.name}'s Row"
+        self.subzones = []
+
+class HalfBoard:
+    def __init__(self, player_name:str):
+        self.name = player_name
+        self.deck = Deck()
+        self.graveyard = Graveyard()
         self.main_zone = MainZone()
-        self.row = Row(name, description)
-        self.deck = []  # The player's deck, could be a list of cards
-        self.graveyard = list[Card]  # Discarded cards
-        self.hand = list[Card]  # The player's hand
+        self.row = Row()
 
-    def draw(self, num_cards):
-        drawn_cards = [self.deck.pop() for _ in range(min(num_cards, len(self.deck)))]
-        print(f"{self.name} drew {[card.name for card in drawn_cards]}.")
-        return drawn_cards
+    def draw(self, num):
+        return Draw(self, num)
 
-    def add_to_graveyard(self, card):
-        # Add a card to the graveyard
-        self.graveyard.append(card)
+class Action:
+    def __init__(self, name):
+        self.name = name
 
+    def declare(self):
+        pass
 
-# Board class for handling game flow
+    def process(self):
+        pass
+
+class Draw(Action):
+    def __init__(self, halfboard:HalfBoard, num):
+        self.halfboard = halfboard
+        self.num = num
+
+    def declare(self):
+        super().declare()
+
+    def process(self):
+        self.drawn_cards = self.halfboard.deck.pop(self.num)
+        super().process()
+
+class Attack(Action):
+    pass
+
+class Activate(Action):
+    pass
+
 class Board:
-    def __init__(self, player1, player2):
+    def __init__(self, player1:HalfBoard, player2:HalfBoard):
         self.player1 = player1
         self.player2 = player2
-        self.action_queue : list[Action] = []
+        self.players = [player1, player2]
+        self.loser = False
+        self.current_turn = None
+        self.turn = [0, 0]
+        self.conditions = []
+        self.state = 'Init'
 
-    def queue_action(self, action:Action):
-        self.action_queue.append(action)
-        print(f"Action queued: {action.name} by {action.actor.name}")
+    def opponent(self, player:HalfBoard|None) -> HalfBoard:
+        if player == self.player1:
+            return self.player2
+        elif player == self.player2:
+            return self.player1
+        elif player == None:
+            return self.player1
+        else:
+            raise ValueError
 
-    def process_actions(self):
-        # Sort actions by speed and resolve
-        self.action_queue.sort(key=lambda action: action.speed, reverse=True)
-        for action in self.action_queue:
-            action.perform(self)
-        self.action_queue.clear()
+    def inspector(self):
+        for condition in self.conditions:
+            result = condition.check(self)
+            if result == LOSE:
+                self.loser = condition.loser
+
+    def initial_setting(self):
+        pass
+
+    def play(self):
+        self.initial_setting()
+        while not self.loser:
+            while self.state not in ('declaring', 'processing'):
+                try:
+                    self.action_que.pop().process()
+                except IndexError:
+                    self.choose_action(self.current_turn)
+            self.inspector()
+            yield 'running'
+            result = yield
+
+        print(f'game end! {self.opponent(self.loser)} survives.')
 
 
+#input player 1, 2 {name, deck, etc}
+player1 = HalfBoard()
+player2 = HalfBoard()
+game = Board(player1, player2)
 
-# Example usage
-player1 = HalfBoard("Player 1")
-player2 = HalfBoard("Player 2")
-board = Board(player1, player2)
-
-# Example cards
-creature = Creature("Dragon", 10, 5)
-spell = Spell("Fireball", "Deals 5 damage", speed=2)
-artifact = Artifact("Ancient Relic", "Increases mana")
-
-# Actions
-player1.main_zone.let(creature)
-creature.attack(None, board)
-
-player1.main_zone.let(spell)
-spell.cast(creature, board)
-
-player1.main_zone.let(artifact)
-artifact.activate(board)
-
-# Process actions
-board.process_actions()
+game.play()
