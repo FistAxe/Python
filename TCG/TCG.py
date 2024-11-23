@@ -2,24 +2,33 @@ LOSE = 'lose'
 
 class Card:
     effects: list['Effect']
-    def __init__(self, name='default card'):
+    def __init__(self, name='default card', *effects):
         self.name = name
+        self.effects = []
+        if effects != ():
+            for effect in effects:
+                self.effects.append(effect)
 
 class Creature(Card):
-    def __init__(self, name='default creature'):
+    def __init__(self, name='default creature', power=1, speed=None, *effects):
         super().__init__(name)
+        self.power = power
+        self.speed = speed
 
 class Spell(Card):
-    def __init__(self, name='default spell'):
+    def __init__(self, name='default spell', speed=1):
         super().__init__(name)
+        self.speed = speed
 
 class Artifact(Card):
-    def __init__(self, name='default artifact'):
+    def __init__(self, name='default artifact', speed=None):
         super().__init__(name)
+        self.speed = speed
 
 class Effect():
     condition: 'Condition'
-    pass
+    def __init__(self, condition:'Condition'):
+        self.condition = condition
 
 class Zone:
     def __init__(self, halfboard:'HalfBoard'):
@@ -83,9 +92,11 @@ class Action:
         self.board = board
 
     def declare(self):
+        #check initial condition
         self.board.action_que.append(self)
 
     def process(self):
+        # do something
         pass
 
 class Draw(Action):
@@ -106,6 +117,21 @@ class Attack(Action):
 class Activate(Action):
     pass
 
+class Let(Action):
+    def __init__(self, card:Card, zone:Zone, board:'Board'):
+        self.card = card
+        self.board = board
+        self.zone = zone
+
+    def declare(self):
+        #check condition
+        super().declare(self)
+
+    def process(self):
+        #if check_condition:
+        self.zone.cards.append(self.card)
+        super().process(self)
+
 class Condition:
     def __init__(self):
         pass
@@ -119,7 +145,7 @@ class Board:
         self.player2 = player2
         self.players = [player1, player2]
         self.loser = False
-        self.current_turn: HalfBoard = None
+        self.current_turn: HalfBoard = player1
         self.turn = [0, 0]
         self.conditions: list[Condition] = []
         self.action_que: list[Action] = []
@@ -138,10 +164,12 @@ class Board:
     def get_processing_order(self):
         cards: list[Card] = []
         for player in [self.opponent(self.current_turn), self.current_turn]:
-            cards.append(player.main_zone.cards[0])
+            if player.main_zone.cards != []:
+                cards.append(player.main_zone.cards[0])
             for zone in player.row.subzones:
                 cards.append(zone.cards[0])
-            cards.append(player.graveyard.cards[0])
+            if player.main_zone.cards != []:
+                cards.append(player.graveyard.cards[0])
         return cards
 
     def inspector(self):
@@ -170,23 +198,26 @@ class Board:
                     self.choose_action(self.current_turn)
             self.inspector()
             yield 'running'
-            result = yield
-            if result[2] != []:
-                for key in result[2]:
+            card, hovering, clicked, unclicked = yield
+            for group in [card, clicked, unclicked]:
+                if group == []:
+                    group = None
+            if card and unclicked:
+                for key in unclicked:
                     self.get_action(key)
-            if result[1] != []:
-                for key in result[1]:
+            if card and clicked:
+                for key in clicked:
                     self.get_action(key)
-            if result[0] != []:
-                for key in result[0]:
+            if card != []:
+                for key in card:
                     self.get_action(key)
 
         print(f'game end! {self.opponent(self.loser)} survives.')
 
 
 #input player 1, 2 {name, deck, etc}
-player1 = HalfBoard('Player 1')
-player2 = HalfBoard('Player 2')
-game = Board(player1, player2)
+#player1 = HalfBoard('Player 1')
+#player2 = HalfBoard('Player 2')
+#game = Board(player1, player2)
 
-game.play()
+#game.play()
