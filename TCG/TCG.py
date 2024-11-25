@@ -1,3 +1,4 @@
+from typing import Callable, Literal
 LOSE = 'lose'
 
 class Card:
@@ -26,8 +27,7 @@ class Artifact(Card):
         self.speed = speed
 
 class Effect():
-    condition: 'Condition'
-    def __init__(self, condition:'Condition'):
+    def __init__(self, condition):
         self.condition = condition
 
 class Zone:
@@ -55,6 +55,12 @@ class Graveyard:
         self.cards: list[Card] = []
         self.halfboard = halfboard
 
+class Hand:
+    def __init__(self, halfboard:'HalfBoard'):
+        self.halfboard = halfboard
+        self.name = f"{self.halfboard.name}'s hand"
+        self.cards: list[Card] = []
+
 class MainZone(Zone):
     def __init__(self, halfboard:'HalfBoard'):
         super().__init__(halfboard)
@@ -63,8 +69,10 @@ class MainZone(Zone):
 class SubZone(Zone):
     def __init__(self, halfboard):
         super().__init__(halfboard)
-        self.suborder = self.halfboard.get_suborder()
-        self.name = f"{self.halfboard.name}'s Main Zone {self.suborder}"
+
+    def rename(self):
+        self.index = self.halfboard.row.subzones.index(self)
+        self.name = f"{self.halfboard.name}'s Sub Zone {self.index}"
 
 class Row:
     def __init__(self, halfboard:'HalfBoard'):
@@ -79,6 +87,12 @@ class HalfBoard:
         self.graveyard = Graveyard(self)
         self.main_zone = MainZone(self)
         self.row = Row(self)
+        self.hand = Hand(self)
+        self.available_actions: list[Action] = []
+
+    @property
+    def zones(self):
+        return [self.main_zone] + self.row.subzones
 
     def get_suborder(self):
         return len(self.row.subzones)
@@ -90,14 +104,19 @@ class Action:
     def __init__(self, name, board:'Board'):
         self.name = name
         self.board = board
+        self.check: Callable[..., bool]|bool = True
+        self.trigger: Callable[..., bool]|bool|None = None
 
     def declare(self):
         #check initial condition
-        self.board.action_que.append(self)
-
+        if self.board.is_available(self):
+            self.process()
+        else:
+            return False
+        
     def process(self):
-        # do something
-        pass
+        # After doing something
+        self.board.check_trigger()
 
 class Draw(Action):
     def __init__(self, halfboard:HalfBoard, num):
@@ -108,7 +127,8 @@ class Draw(Action):
         super().declare()
 
     def process(self):
-        self.drawn_cards = self.halfboard.deck.pop(self.num)
+        for _ in range(self.num):
+            self.halfboard.hand.cards.append(self.halfboard.deck.pop())
         super().process()
 
 class Attack(Action):
@@ -118,26 +138,24 @@ class Activate(Action):
     pass
 
 class Let(Action):
-    def __init__(self, card:Card, zone:Zone, board:'Board'):
+    def __init__(self, card:Card, zone:Zone, came_from:Zone|Hand|Graveyard, board:'Board'):
         self.card = card
         self.board = board
         self.zone = zone
+        self.came_from = came_from
 
     def declare(self):
-        #check condition
-        super().declare(self)
+        if self.board == self.came_from:
+            self.check = False
+        super().declare()
+
 
     def process(self):
         #if check_condition:
         self.zone.cards.append(self.card)
-        super().process(self)
+        #self.came_from.cards.remove(self.card)
+        super().process()
 
-class Condition:
-    def __init__(self):
-        pass
-
-    def check(self, board):
-        return 'Able'
 
 class Board:
     def __init__(self, player1:HalfBoard, player2:HalfBoard):
@@ -145,21 +163,43 @@ class Board:
         self.player2 = player2
         self.players = [player1, player2]
         self.loser = False
-        self.current_turn: HalfBoard = player1
+        self.current_player: HalfBoard = player1
         self.turn = [0, 0]
-        self.conditions: list[Condition] = []
-        self.action_que: list[Action] = []
         self.state = 'Init'
 
-    def opponent(self, player:HalfBoard|None) -> HalfBoard:
+        self.holding = None
+        self.holding_from = None
+        self.gamecomponents: list[HalfBoard|Deck|Graveyard|Zone|Hand|Card] = []
+
+    def opponent(self, player:HalfBoard|None=None) -> HalfBoard:
         if player == self.player1:
             return self.player2
         elif player == self.player2:
             return self.player1
         elif player == None:
-            return self.player1
+            return self.opponent(self.current_player)
         else:
             raise ValueError
+
+    def refresh_gamecomponents(self):
+        self.gamecomponents = []
+        for player in self.players:
+            self.gamecomponents.append(player)
+            self.gamecomponents.append(player.deck)
+            self.gamecomponents.append(player.hand)
+            self.gamecomponents.append(player.graveyard)
+            if len(player.graveyard.cards) > 0:
+                self.gamecomponents.append(player.graveyard.cards[0])
+            for zone in player.zones:
+                self.gamecomponents.append(zone)
+                for card in zone.cards:
+                    self.gamecomponents.append(card)
+
+    def refresh_available_actions(self):
+        self.refresh_gamecomponents()
+        for player in self.players:
+            for component in self.gamecomponents:
+                player.available_actions.append(component, self.current_player)
 
     def get_processing_order(self):
         cards: list[Card] = []
@@ -171,46 +211,87 @@ class Board:
             if player.main_zone.cards != []:
                 cards.append(player.graveyard.cards[0])
         return cards
-
-    def inspector(self):
-        for card in self.get_processing_order():
-            for effect in card.effects:
-                result = effect.condition.check(self)
-                if result == LOSE:
-                    self.loser = effect.condition.loser
-                    return 0
+    
+    def make_checklist(self):
+        self.refresh_gamecomponents()
+        checklist: list[Callable[..., bool]] = []
+        for component in self.gamecomponents:
+            if hasattr(component, 'check'):
+                checklist.append(component.check)
+        return checklist
+    
+    def make_triggerlist(self):
+        self.refresh_gamecomponents()
+        triggerlist: list[Callable[..., bool]] = []
+        for component in self.gamecomponents:
+            if hasattr(component, 'trigger'):
+                triggerlist.append(component.trigger)
+        return triggerlist
+    
+    def is_available(self, action:Action):
+        ans = True
+        for check in self.make_checklist():
+            ans *= check(self, action)
+            if not ans:
+                break
+        return ans
+    
+    def check_trigger(self):
+        for trigger in self.make_triggerlist():
+            trigger(self)
 
     def initial_setting(self):
         for player in self.players:
             player.draw(5)
-            self.inspector()
+            self.check_trigger(self)
 
-    def get_action(self, key):
-        pass
+    def interpret(self, type:Literal['click', 'drop'], key:Zone|Deck|Hand|Graveyard, card=None, subzone_num:int|None=None):
+        if card == True:
+            card = '1'
+
+        if type == 'click':
+            self.holding_from = key
+            self.holding = key.cards.pop()
+            
+        elif type == 'drop':
+            if key == 'end':
+                self.current_player = self.opponent()
+                return True
+            elif isinstance(key, Zone):
+                Let(card, key, self.holding_from, self).declare()
+                return True
+            elif key == 'temp zone':
+                if len(self.current_player.row.subzones) > 4:
+                    return 'too many sub zones!'
+                else:
+                    self.current_player.row.subzones.insert(subzone_num - 1, SubZone(self.current_player))
+                    for subzone in self.current_player.row.subzones:
+                        subzone.rename()
+                    self.current_player.row.subzones[subzone_num - 1].cards.append('l')
+                    return True
+            elif key == 'end':
+                self.current_player = self.opponent()
+                return True
 
     def play(self):
-        self.initial_setting()
-        while not self.loser:
-            while self.state not in ('declaring', 'processing'):
-                try:
-                    self.action_que.pop().process()
-                except IndexError:
-                    self.choose_action(self.current_turn)
-            self.inspector()
-            yield 'running'
-            card, hovering, clicked, unclicked = yield
-            for group in [card, clicked, unclicked]:
-                if group == []:
-                    group = None
-            if card and unclicked:
-                for key in unclicked:
-                    self.get_action(key)
-            if card and clicked:
-                for key in clicked:
-                    self.get_action(key)
-            if card != []:
-                for key in card:
-                    self.get_action(key)
+        for i in range(10):
+            self.player1.deck.cards.append(i)
+
+        self.player1.row.subzones.append(SubZone(self.player1))
+        for subzone in self.player1.row.subzones:
+            subzone.rename()
+        self.player1.main_zone.cards.append('main card')
+        self.player1.row.subzones[0].cards.append('sub card')
+        while True:
+            #yield True
+            print('start loop')
+            args: list[str, ] = yield
+            print('got message')
+            if args != None:
+                yield self.interpret(*args)
+            else:
+                yield 'a'
+            print('end loop')
 
         print(f'game end! {self.opponent(self.loser)} survives.')
 
