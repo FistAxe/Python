@@ -48,8 +48,8 @@ def card_on_zone(zone_pos:list):
     return [zone_pos[0] + ZONE_MARGIN, zone_pos[1] + ZONE_MARGIN]
 
 board_rv = [BOARD_MARGIN, ROW2, HALFBOARD_WIDTH, HALFBOARD_HEIGHT*2]
-board = pg.Surface((HALFBOARD_WIDTH, HALFBOARD_HEIGHT*2))
-board.fill(WHITE)
+board_img = pg.Surface((HALFBOARD_WIDTH, HALFBOARD_HEIGHT*2))
+board_img.fill(WHITE)
 
 half1_rv = [BOARD_MARGIN, ROW4, HALFBOARD_WIDTH, HALFBOARD_HEIGHT]
 half2_rv = [BOARD_MARGIN, ROW2, HALFBOARD_WIDTH, HALFBOARD_HEIGHT]
@@ -104,6 +104,8 @@ for x in range(HALFBOARD_WIDTH - 2*ZONE_SIZE[0]):
 
 row2 = row1.copy()
 
+hand_img = pg.Surface((10, 10))
+hand_img.fill(WHITE)
 hand1_center = [BOARD_MARGIN + HALFBOARD_WIDTH//2 - ZONE_SIZE[0]//2, ROW6]
 hand2_center = [BOARD_MARGIN + HALFBOARD_WIDTH//2 - ZONE_SIZE[0]//2, ROW1]
 
@@ -116,89 +118,59 @@ end_button_rv = [WIDTH - END_BUTTON_SIZE[0] - 50, HEIGHT - END_BUTTON_SIZE[1] - 
 end_button = pg.Surface(END_BUTTON_SIZE)
 end_button.fill(GY_BG)
 
-gamecomponents: dict[str, pg.Rect] = {
-    'board': None,
-    'halfboard1': None,
-    'halfboard2': None,
-    'deck1': None,
-    'deck2': None,
-    'gy1': None,
-    'gy2': None,
-    'mainzone1': None,
-    'mainzone2': None,
-    'row1': None,
-    'row2': None,
-    'endbutton': None
-    }
+# real images on the board. May be different from real data.
+gamecomponents: dict[TCG.Board|TCG.Pack|TCG.Card|TCG.Row|str, pg.Rect] = {}
 
 player1 = TCG.HalfBoard('player 1')
 player2 = TCG.HalfBoard('player 2')
-game = TCG.Board(player1, player2)
+board = TCG.Board(player1, player2)
 
 cardlist = []
 
-ref_dict = {
-    'deck1': player1.deck,
-    'deck2': player2.deck,
-    'mainzone1': player1.main_zone,
-    'mainzone2': player2.main_zone,
-    'gy1': player1.graveyard,
-    'gy2': player2.graveyard,
-    'hand1': player1.hand,
-    'hand2': player2.hand
-    }
-
 def get_key_priority(keys:list[str]):
     priority_order = [
-        'mainzone',
-        'gy',
-        'deck',
-        'temp zone',
-        'row',
-        'halfboard',
-        'board'
+        TCG.MainZone,
+        TCG.Graveyard,
+        TCG.Deck,
+        TCG.Row,
+        TCG.HalfBoard,
+        TCG.Board
     ]
-    for key in keys:
-        if 'subzone' not in key:
-            basic = False
-            for basic_key in priority_order:
-                if basic_key in key:
-                    basic = True
-                    break
-            if not basic:
-                return key, 'card'
-        elif 'subzone' in key:
-            return key, 'comp'
-    for basic_key in priority_order:
-        if basic_key in key:
-            return key, 'comp'
+    if 'temp zone' in keys:
+        return 'temp zone', 'comp'
+    else:
+        for type in priority_order:
+            for key in keys:
+                if isinstance(key, type):
+                    return key, 'comp'
     return None, 'None'
 
 hovering = []
 clicking = []
 unclicking = []
-dragging = False
-drag_from = None
 making_subzone = 0
 
 def screen_generator():
     def board_generator():
-        gamecomponents.clear()
-        gamecomponents['board'] = SURF.blit(board, board_rv)
-        gamecomponents['halfboard1'] = SURF.blit(halfboard1, half1_rv)
-        gamecomponents['halfboard2'] = SURF.blit(halfboard2, half2_rv)
-        gamecomponents['deck1'] = SURF.blit(deck1, deck1_rv)
-        gamecomponents['deck2'] = SURF.blit(deck2, deck2_rv)
-        gamecomponents['gy1'] = SURF.blit(gy1, gy1_rv)
-        gamecomponents['gy2'] = SURF.blit(gy2, gy2_rv)
-        gamecomponents['mainzone1'] = SURF.blit(mz1, mz1_rv)
-        gamecomponents['mainzone2'] = SURF.blit(mz2, mz2_rv)
-        gamecomponents['row1'] = SURF.blit(row1, row1_rv)
-        gamecomponents['row2'] = SURF.blit(row2, row2_rv)
+        global gamecomponents
+        gamecomponents = {}
+        gamecomponents[board] = SURF.blit(board_img, board_rv)
+        gamecomponents[player1] = SURF.blit(halfboard1, half1_rv)
+        gamecomponents[player2] = SURF.blit(halfboard2, half2_rv)
+        gamecomponents[player1.deck] = SURF.blit(deck1, deck1_rv)
+        gamecomponents[player2.deck] = SURF.blit(deck2, deck2_rv)
+        gamecomponents[player1.graveyard] = SURF.blit(gy1, gy1_rv)
+        gamecomponents[player2.graveyard] = SURF.blit(gy2, gy2_rv)
+        gamecomponents[player1.main_zone] = SURF.blit(mz1, mz1_rv)
+        gamecomponents[player2.main_zone] = SURF.blit(mz2, mz2_rv)
+        gamecomponents[player1.row] = SURF.blit(row1, row1_rv)
+        gamecomponents[player2.row] = SURF.blit(row2, row2_rv)
+        gamecomponents[player1.hand] = SURF.blit(hand_img, hand1_center)
+        gamecomponents[player2.hand] = SURF.blit(hand_img, hand2_center)
         gamecomponents['endbutton'] = SURF.blit(end_button, end_button_rv)
 
     def subzone_generator():
-        subzone_tot = len(game.player1.row.subzones) + bool(making_subzone)
+        subzone_tot = len(board.player1.row.subzones) + bool(making_subzone)
         if subzone_tot > 0:
             for subzone_num in range(subzone_tot):
                 pos = (
@@ -207,31 +179,48 @@ def screen_generator():
                     )
                 if (making_subzone - 1) == subzone_num:
                     gamecomponents['temp zone'] = SURF.blit(sz_template, pos)
-                    ref_dict['temp zone'] = 'temp zone'
                 else:
                     subzone_index = subzone_num - bool(-1 < making_subzone - 1 < subzone_num)
-                    gamecomponents[f'subzone1-{subzone_index}'] = SURF.blit(sz_template, pos)
-                    ref_dict[f'subzone1-{subzone_index}'] = game.player1.row.subzones[subzone_index]
+                    gamecomponents[player1.row.subzones[subzone_index]] = SURF.blit(sz_template, pos)
 
     def card_generator():
-        for card in range(len(ref_dict['deck1'].cards)):
-            SURF.blit(card_back_image, (card_on_zone(deck1_rv)[0], card_on_zone(deck1_rv)[1] + 4*card))
-        for card in range(len(ref_dict['mainzone1'].cards)):
-            SURF.blit(card_back_image, (card_on_zone(mz1_rv)[0], card_on_zone(mz1_rv)[1] + 4*card))
-        for card in range(len(ref_dict['gy1'].cards)):
-            SURF.blit(card_back_image, (card_on_zone(gy1_rv)[0], card_on_zone(gy1_rv)[1] + 4*card))
-        for card in range(len(ref_dict['hand1'].cards)):
-            SURF.blit(card_back_image, (card_on_zone(hand1_center)[0] - len(ref_dict['hand1'].cards) + card, card_on_zone(hand1_center)[1]))
-        for card in range(len(ref_dict['hand2'].cards)):
-            pass
-        for subzone in [key for key in gamecomponents if 'subzone' in key]:
-            for card in range(len(ref_dict[subzone].cards)):
-                SURF.blit(card_back_image, (gamecomponents[subzone].x + ZONE_MARGIN, gamecomponents[subzone].y + ZONE_MARGIN + 4*card))
-        if dragging:
-            gamecomponents['sample card'] = SURF.blit(
+        cards_shown_dict: dict[str, list] = {}
+        for key in gamecomponents:
+            # Ignore cardlist generation on temp zone
+            if isinstance(key, TCG.Pack) or isinstance(key, TCG.Hand):
+                cards_shown_dict[key] = key.cards.copy()
+        # Holding card is not shown on its place
+        if board.holding_from in cards_shown_dict:
+            cards_shown_dict[board.holding_from].pop()
+
+        # ROW5
+        for subzone in [key for key in gamecomponents if isinstance(key, TCG.SubZone)]:
+            for i, card in enumerate(cards_shown_dict[subzone]):
+                gamecomponents[card] = SURF.blit(card_back_image,
+                                                 (gamecomponents[subzone].x + ZONE_MARGIN, gamecomponents[subzone].y + ZONE_MARGIN + 4*i)
+                                                 )
+        for i, card in enumerate(cards_shown_dict[player1.deck]):
+            gamecomponents[card] = SURF.blit(card_back_image, (card_on_zone(deck1_rv)[0], card_on_zone(deck1_rv)[1] + 4*i))
+        # ROW4
+        for i, card in enumerate(cards_shown_dict[player1.main_zone]):
+            gamecomponents[card] = SURF.blit(card_back_image, (card_on_zone(mz1_rv)[0], card_on_zone(mz1_rv)[1] + 4*i))
+        for i, card in enumerate(cards_shown_dict[player1.graveyard]):
+            gamecomponents[card] = SURF.blit(card_back_image, (card_on_zone(gy1_rv)[0], card_on_zone(gy1_rv)[1] + 4*i))
+        # HAND
+        for i, card in enumerate(cards_shown_dict[player1.hand]):
+            gamecomponents[card] = SURF.blit(card_back_image,
+                                             (card_on_zone(hand1_center)[0] - len(cards_shown_dict[player1.hand]) + i*20, card_on_zone(hand1_center)[1])
+                                             )
+        for i, card in enumerate(cards_shown_dict[player2.hand]):
+            gamecomponents[card] = SURF.blit(card_back_image,
+                                             (card_on_zone(hand2_center)[0] - len(cards_shown_dict[player2.hand]) + i*20, card_on_zone(hand2_center)[1])
+                                             )
+
+        if board.holding:
+            gamecomponents[board.holding] = SURF.blit(
                 card_back_image, tuple(sum(elem) for elem in zip(pg.mouse.get_pos(), (-50, -70)))
                 )
-        elif not dragging and 'sample card' in gamecomponents:
+        elif not board.holding and 'sample card' in gamecomponents:
             del gamecomponents['sample card']
 
     def explanation_generator():
@@ -249,38 +238,40 @@ def screen_generator():
             img = None
             if key == None:
                 pass
-            elif key == 'board':
+            elif isinstance(key, TCG.Board):
                 title = 'Board'
                 explanation = 'Where game is played.'
-            elif key == 'halfboard1':
+            elif key == player1:
                 title = 'Your Halfboard'
                 explanation = 'Your side of the board.'
-            elif key == 'halfboard2':
+            elif key == player2:
                 title = "Opponent's Halfboard"
                 explanation = "The opponent's side of the board"
-            elif key == 'deck1':
+            elif key == player1.deck:
                 title = 'Your Deck'
                 explanation = 'Your Deck.'
-            elif key == 'row1':
+            elif key == player1.row:
                 title = 'Your Row'
                 explanation = 'Place here to make a new Sub Zone.'
-            elif key == 'mainzone1':
+            elif key == player1.main_zone:
                 title = 'Main Zone'
                 explanation = 'Place here to end turn.'
-            elif key == 'gy1':
+            elif key == player1.graveyard:
                 title = 'Your Graveyard'
                 explanation = 'Used cards are here.'
-            elif 'subzone1-' in key:
-                title = f'Your Sub Zone {key[9:]}'
+            elif isinstance(key, TCG.SubZone):
+                title = f'Your Sub Zone {key.name}'
                 explanation = 'Your Sub Zone.'
             elif key == 'temp zone':
                 title = f'New Sub Zone'
                 explanation = 'Place card here to create new Sub Zone.'
             return [title, explanation, img]
 
-        if dragging:
+        if board.holding:
+            # On nowhere -> Show card itself
             if len(hovering) == 1:
                 explanation = get_card_explanation(hovering[0])
+            # On place -> Show place information
             else:
                 key, str = get_key_priority(hovering[:-1])
                 explanation = get_card_explanation(key) if str == 'card' else get_gamecomponent_explanation(key)
@@ -299,7 +290,6 @@ def screen_generator():
         if rendered_img:
             SURF.blit(rendered_img, img_pos)
 
-
     SURF.fill(WHITE)
 
     board_generator()
@@ -307,12 +297,16 @@ def screen_generator():
     card_generator()
     explanation_generator()
 
-gameplay = game.play()
+gameplay = board.play()
 next(gameplay)
 
 def calculate(message):
     re = gameplay.send(message)
-    next(gameplay)
+    if type(re) == str:
+        REFRESH = False
+        raise Exception(f'Exception {re} occured.')
+    else:
+        next(gameplay)
     return re
 
 screen_generator()
@@ -328,65 +322,59 @@ while REFRESH:
             continue
 
         if event.type == pg.MOUSEMOTION:
-            #print('moved')
+            # Initialize hovering (As you moved.)
             hovering = []
             for key in gamecomponents:
                 if gamecomponents[key].collidepoint(pg.mouse.get_pos()):
                     print(f'you are on {key}.')
                     hovering.append(key)
-            if dragging:
-                if len(hovering) > 1 and 'row1' in hovering and not any('subzone1' in s for s in hovering):
+            
+            # Below is only for subzone indexing.
+            if board.holding:
+                # Trying to make subzone.
+                if any(isinstance(comp, TCG.Row) for comp in hovering) and not any(isinstance(comp, TCG.SubZone) for comp in hovering):
                     subzone_x = []
-                    for subzone in [key for key in gamecomponents if 'subzone1' in key]:
+                    for subzone in player1.row.subzones:
                         subzone_x.append(gamecomponents[subzone].x)
                     subzone_x.sort()
                     x = pg.mouse.get_pos()[0]
                     for i in range(len(subzone_x)):
+                        # There is more than 1 existing subzone on left
                         if subzone_x[i] > x:
                             making_subzone = i + 1
                             break
+                    # Making subzone on very left
                     if making_subzone == 0:
                         making_subzone = len(subzone_x) + 1
+                # Giving up making subzone.
                 else:
                     making_subzone = 0
 
         if event.type == pg.MOUSEBUTTONDOWN:
-            print('pressed')
-            for key in gamecomponents:
-                if gamecomponents[key].collidepoint(pg.mouse.get_pos()):
-                    print(f'you clicked {key}.')
-                    #frame_clicking.append(key)
-                    for place in ['deck1', 'deck2', 'mainzone1', 'mainzone2', 'gy1', 'gy2']:
-                        if place == key and len(ref_dict[key].cards) > 0 and not dragging:
-                            dragging = True
-                            drag_from = key
-                            calculate(['click', ref_dict[key]])
+            # print('pressed')
+            if not board.holding:
+                keys = []
+                for key in gamecomponents:
+                    if gamecomponents[key].collidepoint(pg.mouse.get_pos()):
+                        print(f'you clicked {key}.')
+                        keys.append(key)
+                calculate(['click', keys])
+            else:
+                raise Exception('Tryed to click while dragging.')
 
         if event.type == pg.MOUSEBUTTONUP:
             print('unpressed')
+            keys = []
             for key in gamecomponents:
                 if gamecomponents[key].collidepoint(pg.mouse.get_pos()):
                     print(f'you unclicked {key}.')
-                    #frame_unclicking.append(key)
-                    if dragging:
-                        for component in ['gy1', 'gy2']:
-                            if key == component:
-                                ref_dict[key].cards.append(len(ref_dict[key].cards))
-                                unclicking.append([dragging, key])
-                                dragging = False
-                        if key in ['mainzone1','temp zone'] or 'subzone1' in key:
-                            if calculate(['drop', ref_dict[key], dragging, making_subzone]) != True:
-                                print('Subzone Error')
-                            dragging = False
-                    
-                    elif key == 'endbutton':
-                        if calculate(['drop', 'end']) != True:
-                            print('Turn error!')
-                            
-            if dragging:
-                ref_dict[drag_from].cards.append(len(ref_dict[drag_from].cards))
-            dragging = False
-            drag_from = None
+                    keys.append(key)
+            if board.holding:
+                ans = calculate(['drop', keys, making_subzone])
+                if ans == False:
+                    raise Exception('Something went Wrong')
+                elif isinstance(ans, str):
+                    raise Exception(ans)
             making_subzone = 0
 
     screen_generator()

@@ -2,13 +2,43 @@ from typing import Callable, Literal
 LOSE = 'lose'
 
 class Card:
-    effects: list['Effect']
     def __init__(self, name='default card', *effects):
         self.name = name
-        self.effects = []
+        self.effects: list[Effect] = []
+        self.on_face = False
         if effects != ():
             for effect in effects:
                 self.effects.append(effect)
+        self._location: Pack = None
+
+    @property
+    def location(self):
+        return self._location
+    
+    @location.setter
+    def location(self, new_location):
+        if self._location != new_location:
+            self._location = new_location
+
+    def on_top(self):
+        if self.location.cards[-1] == self:
+            return True
+        else:
+            return False
+
+    def is_revealed(self):
+        if not self.on_face:
+            return False
+        else:
+            if isinstance(self.location, Zone):
+                if self.on_top():
+                    return 'full'
+                else:
+                    return 'half'
+            elif isinstance(self.location, Graveyard) and self.on_top():
+                return 'full'
+            else:
+                raise Exception('Cannot define if card is revealed!')
 
 class Creature(Card):
     def __init__(self, name='default creature', power=1, speed=None, *effects):
@@ -26,53 +56,186 @@ class Artifact(Card):
         super().__init__(name)
         self.speed = speed
 
-class Effect():
-    def __init__(self, condition):
-        self.condition = condition
+class Effect:
+    def __init__(self, halfboard:'HalfBoard', bind_to=None):
+        if halfboard:
+            self.halfboard = halfboard
+            self.board = self.halfboard.board
+        self.bind_to = bind_to
+        self.effectblocks: list[tuple[EffectBlock, int|None, int|None]] = []
+        '''How to Use: (EffectBlock, next index if True, next index if False)'''
 
-class Zone:
+class EffectBlock:
+    def __init__(self, effect:Effect):
+        self.effect = effect
+
+    @property
+    def index(self):
+        for i, eb in enumerate([tup[0] for tup in self.effect.effectblocks]):
+            if eb == self:
+                return i
+        # If there's no matching index:
+        raise Exception('Effectblock not included in Effect!')
+
+class Condition(EffectBlock):
+    def __init__(self, effect:Effect, check:Callable[..., bool|int]=None):
+        super().__init__(effect)
+        self.activated: bool = True
+        if check:
+            self.check = check
+
+    def check(self) -> bool|int :
+        return False
+
+    def activation_check(self):
+        return self.activated
+
+class Restriction(EffectBlock):
+    def verify(self, act:'EffectBlock') -> bool:
+        return True
+
+class Choice(EffectBlock):
+    def __init__(self, effect: Effect):
+        super().__init__(effect)
+        self.key = None
+
+    def choose(self):
+        return self.effect.effectblocks[self.index][1]
+
+
+class Action(EffectBlock):
+    def process(self) -> bool|str:
+        return True
+    
+class Pack():
+    class _IsEmptyCondition(Condition):
+        def __init__(self, pack:'Pack'):
+            self.pack = pack
+            self.num: int|None = None
+
+        def __call__(self, effect, num=None):
+            super().__init__(effect)
+            if num:
+                self.num = num
+            return self
+
+        def check(self):
+            if self.num:
+                return self.pack.is_empty(self.num)
+            else:
+                return self.pack.is_empty()
+
     def __init__(self, halfboard:'HalfBoard'):
+        self.cards: list[Card] = []
+        self.halfboard = halfboard
+        self.effects: list[Effect] = []
+        self.IsEmptyCondition = self._IsEmptyCondition(self)
+
+    def is_empty(self, num=None):
+        if num:
+            return True if len(self.cards) >= num else False
+        else:
+            return True if len(self.cards) == 0 else False
+
+class Zone(Pack):
+    def __init__(self, halfboard:'HalfBoard'):
+        super().__init__(halfboard)
         self.name = 'error: not specific zone'
-        self.cards: list[Card] = []
-        self.halfboard = halfboard
 
-class Deck:
+    def is_empty(self, board):
+        if super().is_empty(board):
+            return self.collapse()
+
+    def collapse(self):
+        self.cards.clear()
+
+class Deck(Pack):
+    class _DrawAction(Action):
+        def __init__(self, deck:'Deck'):
+            self.deck = deck
+
+        def __call__(self, effect:'Effect', num:int=1):
+            super().__init__(effect)
+            self.num = num
+            return self
+
+        def process(self):
+            for _ in range(self.num):
+                self.deck.halfboard.hand.cards.append(self.deck.cards.pop())
+                self.deck.halfboard.hand.cards[-1].location = self.deck.halfboard.hand
+            return True
+    
+    class _BaseDrawAction(_DrawAction):
+        def process(self):
+            self.deck.drawed = True
+            super().process()
+
+    class BaseDrawEffect(Effect):
+        class BaseDrawCondition(Condition):
+            def check(self):
+                return bool(self.effect.halfboard.board.current_player == self.effect.halfboard) * \
+                       bool(not self.effect.deck.drawed)
+            
+        class BaseDrawChoice(Choice):
+            def __init__(self, effect: 'Deck.BaseDrawEffect'):
+                super().__init__(effect)
+                self.key = self.effect.deck
+
+            def choose(self):
+                if self.effect.halfboard.board.holding_from == self.effect.deck:
+                    super().choose()
+
+        def __init__(self, halfboard: 'HalfBoard', deck: 'Deck'):
+            super().__init__(halfboard, None)
+            self.deck = deck
+            self.drawed = False
+            self.effectblocks = [
+                (self.BaseDrawCondition(self), 1),
+                (self.deck.IsEmptyCondition(self), 4, 2),
+                (self.BaseDrawChoice(self), 3),
+                (self.deck.BaseDrawAction(self, 1),),
+                (self.deck.halfboard.LoseAction(self),)
+            ]
+
     def __init__(self, halfboard):
-        self.cards: list[Card] = []
-        self.halfboard = halfboard
+        super().__init__(halfboard)
+        self.IsEmptyCondition = self._IsEmptyCondition(self)
+        self.DrawAction = self._DrawAction(self)
+        self.BaseDrawAction = self._BaseDrawAction(self)
+        self.basedraweffect = self.BaseDrawEffect(self.halfboard, self)
+        self.drawed = False
+        self.effects.append(self.basedraweffect)
 
-    def pop(self, num):
-        try:
-            pops = []
-            for _ in num:
-                pops += self.cards.pop()
-            return pops
-        except IndexError:
-            return 'Deck ran out!'
-
-class Graveyard:
+class Graveyard(Pack):
     def __init__(self, halfboard):
-        self.cards: list[Card] = []
-        self.halfboard = halfboard
+        super().__init__(halfboard)
 
-class Hand:
+class Hand(Pack):
     def __init__(self, halfboard:'HalfBoard'):
-        self.halfboard = halfboard
+        super().__init__(halfboard)
         self.name = f"{self.halfboard.name}'s hand"
-        self.cards: list[Card] = []
 
 class MainZone(Zone):
     def __init__(self, halfboard:'HalfBoard'):
         super().__init__(halfboard)
         self.name = f"{self.halfboard.name}'s Main Zone"
 
+    def collapse(self):
+        super().collapse()
+        return self.halfboard.board.lose(self.halfboard)
+
 class SubZone(Zone):
     def __init__(self, halfboard):
         super().__init__(halfboard)
+        self.trigger = self.is_empty
 
     def rename(self):
         self.index = self.halfboard.row.subzones.index(self)
         self.name = f"{self.halfboard.name}'s Sub Zone {self.index}"
+
+    def collapse(self):
+        super().collapse()
+        self.halfboard.row.remove(self)
 
 class Row:
     def __init__(self, halfboard:'HalfBoard'):
@@ -80,7 +243,25 @@ class Row:
         self.name = f"{self.halfboard.name}'s Row"
         self.subzones: list[SubZone] = []
 
+    def rename(self):
+        for subzone in self.subzones:
+            subzone.index = self.subzones.index(subzone)
+            subzone.name = f"{self.halfboard.name}'s Sub Zone {subzone.index}"
+
+    def insert(self, index):
+        self.subzones.insert(index, SubZone(self.halfboard))
+        self.rename()
+
+    def remove(self, subzone:SubZone):
+        self.subzones.remove(subzone)
+        self.rename()
+
 class HalfBoard:
+    _board: 'Board' = None
+
+    class LoseAction(Action):
+        pass
+
     def __init__(self, player_name:str):
         self.name = player_name
         self.deck = Deck(self)
@@ -88,48 +269,19 @@ class HalfBoard:
         self.main_zone = MainZone(self)
         self.row = Row(self)
         self.hand = Hand(self)
-        self.available_actions: list[Action] = []
+        self.effects: list[Effect] = []
+        self.available_choices: list[Choice] = []
 
     @property
     def zones(self):
         return [self.main_zone] + self.row.subzones
+    
+    @property
+    def board(self):
+        return self._board
 
     def get_suborder(self):
         return len(self.row.subzones)
-
-    def draw(self, num):
-        return Draw(self, num)
-
-class Action:
-    def __init__(self, name, board:'Board'):
-        self.name = name
-        self.board = board
-        self.check: Callable[..., bool]|bool = True
-        self.trigger: Callable[..., bool]|bool|None = None
-
-    def declare(self):
-        #check initial condition
-        if self.board.is_available(self):
-            self.process()
-        else:
-            return False
-        
-    def process(self):
-        # After doing something
-        self.board.check_trigger()
-
-class Draw(Action):
-    def __init__(self, halfboard:HalfBoard, num):
-        self.halfboard = halfboard
-        self.num = num
-
-    def declare(self):
-        super().declare()
-
-    def process(self):
-        for _ in range(self.num):
-            self.halfboard.hand.cards.append(self.halfboard.deck.pop())
-        super().process()
 
 class Attack(Action):
     pass
@@ -138,26 +290,62 @@ class Activate(Action):
     pass
 
 class Let(Action):
-    def __init__(self, card:Card, zone:Zone, came_from:Zone|Hand|Graveyard, board:'Board'):
+    def __init__(self, board:'Board', halfboard:HalfBoard, card:Card, zone:Zone, came_from:Zone|Hand|Graveyard):
+        super().__init__(board, halfboard)
         self.card = card
-        self.board = board
         self.zone = zone
         self.came_from = came_from
 
     def declare(self):
         if self.board == self.came_from:
             self.check = False
-        super().declare()
-
+        ans = super().declare()
+        if not ans:
+            self.board.drop_holding()
+        return ans
 
     def process(self):
-        #if check_condition:
         self.zone.cards.append(self.card)
-        #self.came_from.cards.remove(self.card)
-        super().process()
+        self.board.drop_holding(True)
+        result = super().process()
+        if isinstance(self.zone, MainZone):
+            self.board.current_player = self.board.opponent()
+        return result
 
+class Deploy(Let):
+    def __init__(self, board:'Board', halfboard:HalfBoard, card:Card, subzone_num:int):
+        super().__init__(board, halfboard)
+        self.card = card
+        self.new_index = subzone_num - 1
+
+    def declare(self):
+        if len(self.halfboard.row.subzones) > 4:
+            self.check = False
+        ans = super().declare()
+        # No Process
+        if ans == False:
+            self.board.drop_holding()   # drop
+            return False
+        # Process -> drop ocurred while processing
+        else:
+            return ans
+    
+    def process(self):
+        self.halfboard.row.insert(self.new_index)
+        self.halfboard.row.subzones[self.new_index].cards.append(self.board.holding)
+        self.halfboard.row.subzones[self.new_index].cards[-1].location = self.halfboard.row.subzones[self.new_index]
+        self.board.drop_holding(True)
+        return super().process()
 
 class Board:
+    class InitialSetting(Effect):
+        def __init__(self, board:'Board'):
+            super().__init__(None, board)
+            self.effectblocks = [
+                (board.player1.deck.DrawAction(self, 5),),
+                (board.player2.deck.DrawAction(self, 5),)
+            ]
+
     def __init__(self, player1:HalfBoard, player2:HalfBoard):
         self.player1 = player1
         self.player2 = player2
@@ -166,10 +354,16 @@ class Board:
         self.current_player: HalfBoard = player1
         self.turn = [0, 0]
         self.state = 'Init'
+        self.action_stack: list[Action] = []
+        self.restrictions: list[Restriction] = []
+
+        for player in self.players:
+            player._board = self
 
         self.holding = None
         self.holding_from = None
-        self.gamecomponents: list[HalfBoard|Deck|Graveyard|Zone|Hand|Card] = []
+        self.drawing = False
+        self.gamecomponents: list[HalfBoard|Pack|Card] = []
 
     def opponent(self, player:HalfBoard|None=None) -> HalfBoard:
         if player == self.player1:
@@ -194,106 +388,170 @@ class Board:
                 self.gamecomponents.append(zone)
                 for card in zone.cards:
                     self.gamecomponents.append(card)
-
-    def refresh_available_actions(self):
-        self.refresh_gamecomponents()
-        for player in self.players:
-            for component in self.gamecomponents:
-                player.available_actions.append(component, self.current_player)
+        return self.gamecomponents
 
     def get_processing_order(self):
-        cards: list[Card] = []
-        for player in [self.opponent(self.current_turn), self.current_turn]:
-            if player.main_zone.cards != []:
-                cards.append(player.main_zone.cards[0])
+        order: list[Card|Pack|Board|HalfBoard] = []
+        order.append(self)
+        order.append(self.current_player)
+        order.append(self.opponent())
+        for player in [self.current_player, self.opponent()]:
+            order.append(player.deck)
+            order.append(player.graveyard)
+            order.append(player.row)
+            order.append(player.hand)
+            order.append(player.main_zone)
             for zone in player.row.subzones:
-                cards.append(zone.cards[0])
+                order.append(zone)
+        for player in [self.opponent(), self.current_player]:
             if player.main_zone.cards != []:
-                cards.append(player.graveyard.cards[0])
-        return cards
-    
-    def make_checklist(self):
-        self.refresh_gamecomponents()
-        checklist: list[Callable[..., bool]] = []
-        for component in self.gamecomponents:
-            if hasattr(component, 'check'):
-                checklist.append(component.check)
-        return checklist
-    
-    def make_triggerlist(self):
-        self.refresh_gamecomponents()
-        triggerlist: list[Callable[..., bool]] = []
-        for component in self.gamecomponents:
-            if hasattr(component, 'trigger'):
-                triggerlist.append(component.trigger)
-        return triggerlist
-    
-    def is_available(self, action:Action):
-        ans = True
-        for check in self.make_checklist():
-            ans *= check(self, action)
-            if not ans:
-                break
-        return ans
-    
-    def check_trigger(self):
-        for trigger in self.make_triggerlist():
-            trigger(self)
+                order.append(player.main_zone.cards[0])
+            for zone in player.row.subzones:
+                order.append(zone.cards[0])
+            if player.main_zone.cards != []:
+                order.append(player.graveyard.cards[0])
+        return order
+
+    def process_action(self, action:Action):
+        return action.process()
 
     def initial_setting(self):
-        for player in self.players:
-            player.draw(5)
-            self.check_trigger(self)
+        a = self.InitialSetting(self)
+        for eb in a.effectblocks:
+            eb[0].process()
 
-    def interpret(self, type:Literal['click', 'drop'], key:Zone|Deck|Hand|Graveyard, card=None, subzone_num:int|None=None):
-        if card == True:
-            card = '1'
+    def interpret(self, typ:Literal['click', 'drop'], keys:list[Pack|Card|str], index:int|None=None):
+        # Key selection
+        key = None
+        for k in keys:
+            if isinstance(k, str) or isinstance(k, Deck) or isinstance(k, Graveyard) or isinstance(k, Zone):
+                key = k
+                break
+            # If there is only Hand and card, return card.
+            elif isinstance(k, Card):
+                key = k
+            elif isinstance(k, Board) or isinstance(k, HalfBoard) or isinstance(k, Row):
+                pass
+            else:
+                raise Exception('Something weird in keys!')
+        
+        if typ == 'click':
+            if isinstance(key, Card):
+                self.holding = key
+                self.holding_from = self.holding.location
+            elif isinstance(key, Zone) or isinstance(key, Graveyard):
+                self.holding_from = key
+                self.holding = self.holding_from.cards[-1]
+            elif isinstance(key, Deck):
+                self.holding_from = key
+                self.holding = None
+            return True
+        
+        elif typ == 'drop':
+            for choice in self.current_player.available_choices:
+                if choice.key == key:
+                    return choice
+        else:
+            raise Exception('Not click nor drop!')
+        
+        return False
 
-        if type == 'click':
-            self.holding_from = key
-            self.holding = key.cards.pop()
-            
-        elif type == 'drop':
-            if key == 'end':
-                self.current_player = self.opponent()
-                return True
-            elif isinstance(key, Zone):
-                Let(card, key, self.holding_from, self).declare()
-                return True
-            elif key == 'temp zone':
-                if len(self.current_player.row.subzones) > 4:
-                    return 'too many sub zones!'
-                else:
-                    self.current_player.row.subzones.insert(subzone_num - 1, SubZone(self.current_player))
-                    for subzone in self.current_player.row.subzones:
-                        subzone.rename()
-                    self.current_player.row.subzones[subzone_num - 1].cards.append('l')
-                    return True
-            elif key == 'end':
-                self.current_player = self.opponent()
-                return True
+    def drop_holding(self, is_moved:bool=False):
+        if is_moved:
+            self.holding_from.cards.remove(self.holding)
+        self.holding = None
+        self.holding_from = None
 
     def play(self):
         for i in range(10):
-            self.player1.deck.cards.append(i)
+            new_card = Card(str(i))
+            new_card.location = self.player1.deck
+            self.player1.deck.cards.append(new_card)
+            new_enm_card = Card(str('enm'+f'{ i}'))
+            new_enm_card.location = self.player2.deck
+            self.player2.deck.cards.append(new_enm_card)
 
-        self.player1.row.subzones.append(SubZone(self.player1))
-        for subzone in self.player1.row.subzones:
-            subzone.rename()
-        self.player1.main_zone.cards.append('main card')
-        self.player1.row.subzones[0].cards.append('sub card')
-        while True:
-            #yield True
+        self.initial_setting()
+        self.player2.main_zone.cards.append(Card('main card'))
+
+        while not self.loser:
             print('start loop')
-            args: list[str, ] = yield
+
+            self.action_stack = []
+            self.current_player.available_choices = []
+
+            # While there are any actions
+            calculating = True
+            while calculating:
+                for gamecomponent in self.refresh_gamecomponents():
+                    for effect in gamecomponent.effects:
+                        tup = effect.effectblocks[0]
+                        while tup:
+                            # Condition.check() adds restriction into the list.
+                            if isinstance(tup[0], Condition):
+                                if tup[0].check():
+                                    index = tup[1]
+                                elif len(tup) > 2 and tup[2]:
+                                    index = tup[2]
+                                else:
+                                    tup = None
+                                    break
+                                tup = effect.effectblocks[index]
+                            else:
+                                if isinstance(tup[0], Restriction):
+                                    self.restrictions.append(tup[0])
+                                # Ignore Effects that need Choice
+                                elif isinstance(tup[0], Choice):
+                                    self.current_player.available_choices.append(tup[0])
+                                # Finally, add Action.
+                                elif isinstance(tup[0], Action):
+                                    self.action_stack.append(tup[0])
+                                tup = None
+
+                for action in self.action_stack:
+                    for restriction in self.restrictions:
+                        if restriction.verify(action) == False:
+                            self.action_stack.remove(action)
+
+                if self.action_stack == []:
+                    calculating = False
+                    break
+                else:
+                    result = self.process_action(self.action_stack[-1])
+                    if result == 'end':
+                        yield 'end!'
+                        break
+                    self.action_stack.pop()
+                # Go to the beginning, and make action list again.
+            
+            # When no item in actionlist:
+            for choice in self.current_player.available_choices:
+                for restriction in self.restrictions:
+                    if restriction.verify(choice) == False:
+                        self.current_player.available_choices.remove(choice)
+            #yield True
+
+            # From here, no actions. Player choose what to do.
+            args: list[str, list, int|None] = yield
             print('got message')
             if args != None:
-                yield self.interpret(*args)
-            else:
-                yield 'a'
+                # If interpreting was not successful, send error message.
+                choice = self.interpret(*args)
+                if choice == False:
+                    self.drop_holding()
+                else:
+                    next_effect_index = None
+                    if isinstance(choice, Choice):
+                        next_effect_index = choice.choose()
+                    if next_effect_index:
+                        self.action_stack.append(choice.effect.effectblocks[next_effect_index][0])
+
             print('end loop')
 
+    def lose(self, player:HalfBoard):
+        self.loser = player
         print(f'game end! {self.opponent(self.loser)} survives.')
+        return 'end'
 
 
 #input player 1, 2 {name, deck, etc}
