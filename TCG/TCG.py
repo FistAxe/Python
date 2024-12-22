@@ -1,7 +1,10 @@
 from typing import Callable, Literal
 LOSE = 'lose'
 
-class Card:
+class GameComponent:
+    pass
+
+class Card(GameComponent):
     def __init__(self, name='default card', *effects):
         self.name = name
         self.effects: list[Effect] = []
@@ -104,18 +107,22 @@ class Restriction(EffectBlock):
         return True
 
 class Choice(EffectBlock):
-    def __init__(self, effect: Effect):
+    def __init__(self, effect: Effect, key:GameComponent=None):
         super().__init__(effect)
-        self.key = None
+        self.key = key
 
     def choose(self):
-        return self.effect.effectblocks[self.index][1]
+        return {'target': None}
 
 class Action(EffectBlock):
+    def add_parameter(self, **kwarg):
+        for key, value in kwarg:
+            setattr(self, key, value)
+
     def process(self) -> bool|str:
         return True
     
-class Pack():
+class Pack(GameComponent):
     class _IsEmptyCondition(Condition):
         def __init__(self, pack:'Pack'):
             self.pack = pack
@@ -159,6 +166,7 @@ class Zone(Pack):
 
 class Deck(Pack):
     class _DrawAction(Action):
+        '''단독으로 쓰지 말 것'''
         def __init__(self, deck:'Deck'):
             self.deck = deck
 
@@ -172,23 +180,20 @@ class Deck(Pack):
                 self.deck.halfboard.hand.cards.append(self.deck.cards.pop())
                 self.deck.halfboard.hand.cards[-1].location = self.deck.halfboard.hand
             return True
-    
-    class _BaseDrawAction(_DrawAction):
+        
+    # _DrawAction 상속을 위해 밖으로 뺌뺌
+    class _TurnDrawAction(_DrawAction):
         def process(self):
-            self.deck.drawed = True
+            self.deck.turndrawed = True
             super().process()
 
-    class BaseDrawEffect(Effect):
-        class BaseDrawCondition(Condition):
+    class _TurnDrawEffect(Effect):
+        class _TurnDrawCondition(Condition):
             def check(self, in_action=None):
                 return bool(self.effect.halfboard.board.current_player == self.effect.halfboard) * \
-                       bool(not self.effect.deck.drawed)
+                       bool(not self.effect.deck.turndrawed)
             
-        class BaseDrawChoice(Choice):
-            def __init__(self, effect: 'Deck.BaseDrawEffect'):
-                super().__init__(effect)
-                self.key = self.effect.deck
-
+        class _TurnDrawChoice(Choice):
             def choose(self):
                 if self.effect.halfboard.board.holding_from == self.effect.deck:
                     super().choose()
@@ -198,21 +203,20 @@ class Deck(Pack):
             self.deck = deck
             self.drawed = False
             self.effectblocks = [
-                (self.BaseDrawCondition(self), 1),
+                (self._TurnDrawCondition(self), 1),
                 (self.deck.IsEmptyCondition(self), 4, 2),
-                (self.BaseDrawChoice(self), 3),
-                (self.deck.BaseDrawAction(self, 1),),
+                (self._TurnDrawChoice(self, deck), 3),
+                (self.deck._TurnDrawActionInstance(self, 1),),
                 (self.deck.halfboard.LoseAction(self),)
             ]
 
     def __init__(self, halfboard):
         super().__init__(halfboard)
-        self.IsEmptyCondition = self._IsEmptyCondition(self)
         self.DrawAction = self._DrawAction(self)
-        self.BaseDrawAction = self._BaseDrawAction(self)
-        self.basedraweffect = self.BaseDrawEffect(self.halfboard, self)
-        self.drawed = False
-        self.effects.append(self.basedraweffect)
+        self._TurnDrawActionInstance = self._TurnDrawAction(self)
+        self.turndraw_effect = self._TurnDrawEffect(self.halfboard, self)
+        self.turndrawed = False
+        self.effects.append(self.turndraw_effect)
 
 class Graveyard(Pack):
     def __init__(self, halfboard):
@@ -245,7 +249,7 @@ class SubZone(Zone):
         super().collapse()
         self.halfboard.row.remove(self)
 
-class Row:
+class Row(GameComponent):
     def __init__(self, halfboard:'HalfBoard'):
         self.halfboard = halfboard
         self.name = f"{self.halfboard.name}'s Row"
@@ -264,7 +268,7 @@ class Row:
         self.subzones.remove(subzone)
         self.rename()
 
-class HalfBoard:
+class HalfBoard(GameComponent):
     _board: 'Board' = None
 
     class LoseAction(Action):
@@ -345,7 +349,7 @@ class Deploy(Let):
         self.board.drop_holding(True)
         return super().process()
 
-class Board:
+class Board(GameComponent):
     class End(Exception):
         pass
 
@@ -452,7 +456,7 @@ class Board:
                 self.holding = self.holding_from.cards[-1]
             elif isinstance(key, Deck):
                 self.holding_from = key
-                self.holding = None
+                self.holding = key
             return True
         
         elif typ == 'drop':
@@ -464,9 +468,7 @@ class Board:
         
         return False
 
-    def drop_holding(self, is_moved:bool=False):
-        if is_moved:
-            self.holding_from.cards.remove(self.holding)
+    def drop_holding(self):
         self.holding = None
         self.holding_from = None
 
@@ -484,14 +486,35 @@ class Board:
         # 지금은 맨 끝 추가로 통일일
         self.action_stack.append(action)
 
-    def handle_effect(self, effect:Effect, choice:Choice|None=None, in_action:Action|bool=False):
-        resume = False
+    def process_action(self):
+        action = self.action_stack[0]
+        # Check if executing triggers any Condition.
+        for gamecomponent in self.gamecomponents:
+            for effect in gamecomponent.effects:
+                if self.handle_effect(effect, in_action=action) == 'end':
+                    raise self.End
+            
+        # If chained, it should be resolved first. Stop processing.
+        if self.action_stack[0] != action:
+            return None
+        # If original action is kept, and is valid, action is processed.
+        elif self.verify_restriction(action):
+            result = action.process()
+            if result == 'end':
+                raise self.End
+            self.action_stack.remove(action)
 
+    def handle_effect(self, effect:Effect, choice:Choice|None=None, in_action:Action|bool=False):
         # Init
         effecttuple = None
+        resume = False
+        param = None
+
+        # Can restart EffectBlock chain from Choice.
         if choice:
             resume = True
             effect = choice.effect
+            param = None
             for tup in effect.effectblocks:
                 # Regard there's no Choice reuse in single Effect.
                 if tup[0] == choice:
@@ -499,12 +522,14 @@ class Board:
                     break
             if not effecttuple:
                 raise Exception('No matching effecttuple for choice!')
+        # Else, start from beginning.
         else:
             effecttuple = effect.effectblocks[0]
 
         # Run each EffectBlock
         while effecttuple:
             eb = effecttuple[0]
+            # Check each EffectBlock with current restrictions.
             if not self.verify_restriction(eb):
                 return False
 
@@ -513,10 +538,10 @@ class Board:
                 if not eb.check(in_action):
                     if len(effecttuple) > 2:
                         effecttuple = effect.effectblocks[effecttuple[2]]
-                    return False
+                    else:
+                        return False
                 else:
                     effecttuple = effect.effectblocks[effecttuple[1]]
-
             # Restrictions
             elif isinstance(eb, Restriction):
                 self.restrictions.append(eb)
@@ -524,21 +549,21 @@ class Board:
                     effecttuple = effect.effectblocks[effecttuple[1]]
                 else:
                     return True
-
             # Choices
             elif isinstance(eb, Choice):
                 if not resume:
                     self.current_player.available_choices.append(eb)
                     return True
                 else:
+                    param = eb.choose()
                     effecttuple = effect.effectblocks[effecttuple[1]]
                     resume = False
-            
             # Actions
             elif isinstance(eb, Action):
+                if param:
+                    eb.add_parameter(param)
                 self.action_stack.append(eb)
                 return True
-
             else:
                 raise Exception('Not right EffectBlock!')
 
@@ -559,8 +584,10 @@ class Board:
             # Catch losing condition
             try:
                 # Init
+                self.turn += 1
                 self.current_player = self.player1 if self.turn%2 else self.player2
                 print('start turn')
+
                 self.action_stack = []
                 self.current_player.available_choices = []
                 self.opponent().available_choices = []
@@ -574,33 +601,18 @@ class Board:
                     in_chain = True
                     while in_chain:
                         # Initial action/choice making
+                        self.current_player.available_choices = []
                         for gamecomponent in self.refresh_gamecomponents():
                             for effect in gamecomponent.effects:
-                                if self.handle_effect(effect) == 'end':
-                                    raise self.End
-                        
+                                self.handle_effect(effect)
+                        # If there are no action, break.
                         if len(self.action_stack) == 0:
                             in_chain = False
-                        
-                        # If there are actions, process.
-                        while len(self.action_stack) > 0:
-                            action = self.action_stack[0]
-                            # If passed:
-                            if self.verify_restriction(action):
-                                # Check if executing triggers any Condition.
-                                for effect in gamecomponent.effects:
-                                    if self.handle_effect(effect, in_action=action) == 'end':
-                                        raise self.End
-                                # If chained, it should be resolved first.
-                                if self.action_stack[0] != action:
-                                    break
-                                # If not, action is processed, and check remaining action.
-                                else:
-                                    result = action.process()
-                                    if result == 'end':
-                                        raise self.End
-                                    self.action_stack.remove(action)
-
+                        # Else if there are actions, process.
+                        else:
+                            while len(self.action_stack) > 0:
+                                self.process_action()
+                            self.drop_holding()
                         # Try making chain once more. If failed, continue from below.
 
                     # From here, no chain. Player choose what to do.
@@ -611,12 +623,8 @@ class Board:
                         # If not valid choice, reset the holding card.
                         if choice == False:
                             self.drop_holding()
-                        else:
-                            next_effect_index = None
-                            if isinstance(choice, Choice):
-                                next_effect_index = choice.choose()
-                            if next_effect_index:
-                                self.action_stack.append(choice.effect.effectblocks[next_effect_index][0])
+                        elif isinstance(choice, Choice):
+                            self.handle_effect(None, choice)
                     # Go back to idle state
 
                 # When turn_end is True, loop breaks.
