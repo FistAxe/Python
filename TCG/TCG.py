@@ -65,6 +65,15 @@ class Effect:
         self.effectblocks: list[tuple[EffectBlock, int|None, int|None]] = []
         '''How to Use: (EffectBlock, next index if True, next index if False)'''
 
+    def is_valid(self):
+        if isinstance(self.bind_to, Card):
+            if self.bind_to.on_face:
+                return True
+            else:
+                return False
+        else:
+            return True
+
 class EffectBlock:
     def __init__(self, effect:Effect):
         self.effect = effect
@@ -84,7 +93,7 @@ class Condition(EffectBlock):
         if check:
             self.check = check
 
-    def check(self) -> bool|int :
+    def check(self, in_action=None) -> bool|int :
         return False
 
     def activation_check(self):
@@ -102,7 +111,6 @@ class Choice(EffectBlock):
     def choose(self):
         return self.effect.effectblocks[self.index][1]
 
-
 class Action(EffectBlock):
     def process(self) -> bool|str:
         return True
@@ -119,7 +127,7 @@ class Pack():
                 self.num = num
             return self
 
-        def check(self):
+        def check(self, in_action=None):
             if self.num:
                 return self.pack.is_empty(self.num)
             else:
@@ -172,7 +180,7 @@ class Deck(Pack):
 
     class BaseDrawEffect(Effect):
         class BaseDrawCondition(Condition):
-            def check(self):
+            def check(self, in_action=None):
                 return bool(self.effect.halfboard.board.current_player == self.effect.halfboard) * \
                        bool(not self.effect.deck.drawed)
             
@@ -338,6 +346,9 @@ class Deploy(Let):
         return super().process()
 
 class Board:
+    class End(Exception):
+        pass
+
     class InitialSetting(Effect):
         def __init__(self, board:'Board'):
             super().__init__(None, board)
@@ -352,7 +363,7 @@ class Board:
         self.players = [player1, player2]
         self.loser = False
         self.current_player: HalfBoard = player1
-        self.turn = [0, 0]
+        self.turn = 0
         self.state = 'Init'
         self.action_stack: list[Action] = []
         self.restrictions: list[Restriction] = []
@@ -412,9 +423,6 @@ class Board:
                 order.append(player.graveyard.cards[0])
         return order
 
-    def process_action(self, action:Action):
-        return action.process()
-
     def initial_setting(self):
         a = self.InitialSetting(self)
         for eb in a.effectblocks:
@@ -462,6 +470,78 @@ class Board:
         self.holding = None
         self.holding_from = None
 
+    def verify_restriction(self, eb:EffectBlock):
+        for restriction in self.restrictions:
+            if restriction.effect.is_valid():
+                if not restriction.verify(eb):
+                    print('restriction met!')
+                    return False
+        return True
+
+    # 미완
+    def add_action(self, action:Action):
+        # 여기서 action 추가 순서 정함 (체인인지, 유발인지지)
+        # 지금은 맨 끝 추가로 통일일
+        self.action_stack.append(action)
+
+    def handle_effect(self, effect:Effect, choice:Choice|None=None, in_action:Action|bool=False):
+        resume = False
+
+        # Init
+        effecttuple = None
+        if choice:
+            resume = True
+            effect = choice.effect
+            for tup in effect.effectblocks:
+                # Regard there's no Choice reuse in single Effect.
+                if tup[0] == choice:
+                    effecttuple = tup
+                    break
+            if not effecttuple:
+                raise Exception('No matching effecttuple for choice!')
+        else:
+            effecttuple = effect.effectblocks[0]
+
+        # Run each EffectBlock
+        while effecttuple:
+            eb = effecttuple[0]
+            if not self.verify_restriction(eb):
+                return False
+
+            # Conditions
+            if isinstance(eb, Condition):
+                if not eb.check(in_action):
+                    if len(effecttuple) > 2:
+                        effecttuple = effect.effectblocks[effecttuple[2]]
+                    return False
+                else:
+                    effecttuple = effect.effectblocks[effecttuple[1]]
+
+            # Restrictions
+            elif isinstance(eb, Restriction):
+                self.restrictions.append(eb)
+                if len(effecttuple) > 1:
+                    effecttuple = effect.effectblocks[effecttuple[1]]
+                else:
+                    return True
+
+            # Choices
+            elif isinstance(eb, Choice):
+                if not resume:
+                    self.current_player.available_choices.append(eb)
+                    return True
+                else:
+                    effecttuple = effect.effectblocks[effecttuple[1]]
+                    resume = False
+            
+            # Actions
+            elif isinstance(eb, Action):
+                self.action_stack.append(eb)
+                return True
+
+            else:
+                raise Exception('Not right EffectBlock!')
+
     def play(self):
         for i in range(10):
             new_card = Card(str(i))
@@ -472,81 +552,82 @@ class Board:
             self.player2.deck.cards.append(new_enm_card)
 
         self.initial_setting()
+        # Debug
         self.player2.main_zone.cards.append(Card('main card'))
 
         while not self.loser:
-            print('start loop')
+            # Catch losing condition
+            try:
+                # Init
+                self.current_player = self.player1 if self.turn%2 else self.player2
+                print('start turn')
+                self.action_stack = []
+                self.current_player.available_choices = []
+                self.opponent().available_choices = []
+                # Init Draw
+                if self.turn > 1:
+                    self.current_player.deck.DrawAction.process()
 
-            self.action_stack = []
-            self.current_player.available_choices = []
-
-            # While there are any actions
-            calculating = True
-            while calculating:
-                for gamecomponent in self.refresh_gamecomponents():
-                    for effect in gamecomponent.effects:
-                        tup = effect.effectblocks[0]
-                        while tup:
-                            # Condition.check() adds restriction into the list.
-                            if isinstance(tup[0], Condition):
-                                if tup[0].check():
-                                    index = tup[1]
-                                elif len(tup) > 2 and tup[2]:
-                                    index = tup[2]
-                                else:
-                                    tup = None
+                # Main Phase
+                turn_end = False
+                while not turn_end:
+                    in_chain = True
+                    while in_chain:
+                        # Initial action/choice making
+                        for gamecomponent in self.refresh_gamecomponents():
+                            for effect in gamecomponent.effects:
+                                if self.handle_effect(effect) == 'end':
+                                    raise self.End
+                        
+                        if len(self.action_stack) == 0:
+                            in_chain = False
+                        
+                        # If there are actions, process.
+                        while len(self.action_stack) > 0:
+                            action = self.action_stack[0]
+                            # If passed:
+                            if self.verify_restriction(action):
+                                # Check if executing triggers any Condition.
+                                for effect in gamecomponent.effects:
+                                    if self.handle_effect(effect, in_action=action) == 'end':
+                                        raise self.End
+                                # If chained, it should be resolved first.
+                                if self.action_stack[0] != action:
                                     break
-                                tup = effect.effectblocks[index]
-                            else:
-                                if isinstance(tup[0], Restriction):
-                                    self.restrictions.append(tup[0])
-                                # Ignore Effects that need Choice
-                                elif isinstance(tup[0], Choice):
-                                    self.current_player.available_choices.append(tup[0])
-                                # Finally, add Action.
-                                elif isinstance(tup[0], Action):
-                                    self.action_stack.append(tup[0])
-                                tup = None
+                                # If not, action is processed, and check remaining action.
+                                else:
+                                    result = action.process()
+                                    if result == 'end':
+                                        raise self.End
+                                    self.action_stack.remove(action)
 
-                for action in self.action_stack:
-                    for restriction in self.restrictions:
-                        if restriction.verify(action) == False:
-                            self.action_stack.remove(action)
+                        # Try making chain once more. If failed, continue from below.
 
-                if self.action_stack == []:
-                    calculating = False
-                    break
-                else:
-                    result = self.process_action(self.action_stack[-1])
-                    if result == 'end':
-                        yield 'end!'
-                        break
-                    self.action_stack.pop()
-                # Go to the beginning, and make action list again.
-            
-            # When no item in actionlist:
-            for choice in self.current_player.available_choices:
-                for restriction in self.restrictions:
-                    if restriction.verify(choice) == False:
-                        self.current_player.available_choices.remove(choice)
-            #yield True
+                    # From here, no chain. Player choose what to do.
+                    args: list[str, list, int|None] = yield
+                    print('got message')
+                    if args != None:
+                        choice = self.interpret(*args)
+                        # If not valid choice, reset the holding card.
+                        if choice == False:
+                            self.drop_holding()
+                        else:
+                            next_effect_index = None
+                            if isinstance(choice, Choice):
+                                next_effect_index = choice.choose()
+                            if next_effect_index:
+                                self.action_stack.append(choice.effect.effectblocks[next_effect_index][0])
+                    # Go back to idle state
 
-            # From here, no actions. Player choose what to do.
-            args: list[str, list, int|None] = yield
-            print('got message')
-            if args != None:
-                # If interpreting was not successful, send error message.
-                choice = self.interpret(*args)
-                if choice == False:
-                    self.drop_holding()
-                else:
-                    next_effect_index = None
-                    if isinstance(choice, Choice):
-                        next_effect_index = choice.choose()
-                    if next_effect_index:
-                        self.action_stack.append(choice.effect.effectblocks[next_effect_index][0])
+                # When turn_end is True, loop breaks.
+                print('end turn')
 
-            print('end loop')
+            # Losing Condition
+            except self.End:
+                if not self.loser:
+                    self.lose(self.current_player)
+                yield 'end!'
+            # If there's no self.loser, loop will remain.
 
     def lose(self, player:HalfBoard):
         self.loser = player
