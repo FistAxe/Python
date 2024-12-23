@@ -1,6 +1,7 @@
 import pygame as pg
 import sys
 import TCG as TCG
+from typing import Union, Literal
 
 pg.init()
 
@@ -100,7 +101,7 @@ row1 = pg.Surface((HALFBOARD_WIDTH - 2*ZONE_SIZE[0], ROW_HEIGHT - LINE_WIDTH), p
 for x in range(HALFBOARD_WIDTH - 2*ZONE_SIZE[0]):
     d = abs(x - (HALFBOARD_WIDTH - 2*ZONE_SIZE[0])/2)
     transparancy = 1 - d/(HALFBOARD_WIDTH - 2*ZONE_SIZE[0])*2
-    pg.draw.line(row1, (200, 200, 250, 255*transparancy), (x, 0), (x, ROW_HEIGHT - LINE_WIDTH))
+    pg.draw.line(row1, (200, 200, 250, int(255*transparancy)), (x, 0), (x, ROW_HEIGHT - LINE_WIDTH))
 
 row2 = row1.copy()
 
@@ -119,7 +120,7 @@ end_button = pg.Surface(END_BUTTON_SIZE)
 end_button.fill(GY_BG)
 
 # real images on the board. May be different from real data.
-gamecomponents: dict[TCG.Board|TCG.Pack|TCG.Card|TCG.Row|str, pg.Rect] = {}
+gamecomponents: dict[TCG.GameComponent|Literal['temp zone', 'endbutton'], pg.Rect] = {}
 
 player1 = TCG.HalfBoard('player 1')
 player2 = TCG.HalfBoard('player 2')
@@ -184,11 +185,11 @@ def screen_generator():
                     gamecomponents[player1.row.subzones[subzone_index]] = SURF.blit(sz_template, pos)
 
     def card_generator():
-        cards_shown_dict: dict[str, list] = {}
+        cards_shown_dict: dict[TCG.GameComponent, list] = {}
         for key in gamecomponents:
             # Ignore cardlist generation on temp zone
             if isinstance(key, TCG.Pack) or isinstance(key, TCG.Hand):
-                cards_shown_dict[key] = key.cards.copy()
+                cards_shown_dict[key] = key._cards.copy()
         # Holding card is not shown on its place
         if board.holding_from in cards_shown_dict:
             cards_shown_dict[board.holding_from].pop()
@@ -220,8 +221,6 @@ def screen_generator():
             gamecomponents[board.holding] = SURF.blit(
                 card_back_image, tuple(sum(elem) for elem in zip(pg.mouse.get_pos(), (-50, -70)))
                 )
-        elif not board.holding and 'sample card' in gamecomponents:
-            del gamecomponents['sample card']
 
     def explanation_generator():
         explanation = ['', '', None]
@@ -300,19 +299,18 @@ def screen_generator():
 gameplay = board.play()
 next(gameplay)
 
-def calculate(message):
+def calculate(message:tuple[Literal['click', 'drop'], list, int|None]):
     re = gameplay.send(message)
     if type(re) == str:
         REFRESH = False
         raise Exception(f'Exception {re} occured.')
-    else:
-        next(gameplay)
+    #else:
+        #next(gameplay)
     return re
 
 screen_generator()
 
 REFRESH = True
-
 while REFRESH:
     frame_clicking = []
     unclicking = []
@@ -326,12 +324,12 @@ while REFRESH:
             hovering = []
             for key in gamecomponents:
                 if gamecomponents[key].collidepoint(pg.mouse.get_pos()):
-                    print(f'you are on {key}.')
+                    #Sprint(f'you are on {key}.')
                     hovering.append(key)
             
             # Below is only for subzone indexing.
-            if board.holding:
-                # Trying to make subzone.
+            if board.holding and len(board.current_player.row.subzones) < 3:
+                # On row, but not on Subzone.
                 if any(isinstance(comp, TCG.Row) for comp in hovering) and not any(isinstance(comp, TCG.SubZone) for comp in hovering):
                     subzone_x = []
                     for subzone in player1.row.subzones:
@@ -346,7 +344,7 @@ while REFRESH:
                     # Making subzone on very left
                     if making_subzone == 0:
                         making_subzone = len(subzone_x) + 1
-                # Giving up making subzone.
+                # On Subzone -> Initialize making_subzone.
                 else:
                     making_subzone = 0
 
@@ -358,7 +356,7 @@ while REFRESH:
                     if gamecomponents[key].collidepoint(pg.mouse.get_pos()):
                         print(f'you clicked {key}.')
                         keys.append(key)
-                calculate(['click', keys])
+                calculate(('click', keys, None))
             else:
                 raise Exception('Tryed to click while dragging.')
 
@@ -370,7 +368,7 @@ while REFRESH:
                     print(f'you unclicked {key}.')
                     keys.append(key)
             if board.holding:
-                ans = calculate(['drop', keys, making_subzone])
+                ans = calculate(('drop', keys, making_subzone))
                 if ans == False:
                     raise Exception('Something went Wrong')
                 elif isinstance(ans, str):
