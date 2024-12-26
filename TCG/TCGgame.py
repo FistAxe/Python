@@ -1,6 +1,7 @@
 import pygame as pg
 import sys
-import TCG as TCG
+import TCG
+import TCGplayer
 from typing import Union, Literal
 
 pg.init()
@@ -38,8 +39,11 @@ ROW6 = ROW5 + ROW_HEIGHT
 
 CARD_SIZE = [90, 120]
 CARD_NAME_HEIGHT = 10
-card_back_image = pg.image.load('./image/card_back.png').convert()
-card_front_image = pg.image.load('./image/card_front.png').convert()
+card_back_image = pg.image.load('./images/card_back.png').convert()
+card_front_image = pg.image.load('./images/card_front.png').convert()
+card_front_R = pg.image.load('./images/card_front_R.png').convert()
+card_front_Y = pg.image.load('./images/card_front_Y.png').convert()
+card_front_B = pg.image.load('./images/card_front_B.png').convert()
 TITLE_FONT = pg.font.SysFont('Gulim', 40)
 EXP_FONT = pg.font.SysFont('Gulim', 15)
 
@@ -116,19 +120,27 @@ title_pos = (WIDTH - RIGHT_MARGINE + 20, 30)
 exp_pos = (title_pos[0] + 200, 100)
 img_pos = (title_pos[0], 100)
 
+# For Debugging
 END_BUTTON_SIZE = (200, 100)
+END_BUTTON_FONT = pg.font.SysFont('Gulim', 20)
 end_button_rv = [WIDTH - END_BUTTON_SIZE[0] - 50, HEIGHT - END_BUTTON_SIZE[1] - 50, END_BUTTON_SIZE[0], END_BUTTON_SIZE[1]]
 end_button = pg.Surface(END_BUTTON_SIZE)
 end_button.fill(GY_BG)
+end_button_label = END_BUTTON_FONT.render('End Turn', True, BLACK)
+end_button.blit(end_button_label,
+                (END_BUTTON_SIZE[0]//2 - end_button_label.get_width()//2,
+                 END_BUTTON_SIZE[1]//2 - end_button_label.get_height()//2)
+                )
+
 
 # real images on the board. May be different from real data.
 gamecomponents: dict[TCG.GameComponent|Literal['temp zone', 'endbutton'], pg.Rect] = {}
 
-player1 = TCG.HalfBoard('player 1')
-player2 = TCG.HalfBoard('player 2')
+player1 = TCGplayer.player1
+player2 = TCGplayer.player2
 board = TCG.Board(player1, player2)
 
-cardlist = []
+card_image_dict: dict[type[TCG.Card], pg.Surface] = {}
 
 hovering = []
 clicking = []
@@ -136,8 +148,26 @@ unclicking = []
 making_subzone = 0
 
 def get_card_image(card:TCG.Card):
-    if card.is_revealed():
-        return card_front_image
+    if card.on_face:
+        if type(card) in card_image_dict:
+            real_image = card_image_dict[type(card)]
+        else:
+            if card.color == 'R':
+                real_image_background = card_front_R.copy()
+            elif card.color == 'Y':
+                real_image_background = card_front_Y.copy()
+            elif card.color == 'B':
+                real_image_background = card_front_B.copy()
+            else:
+                real_image_background = card_front_image.copy()
+            
+            if card.image:
+                card_image = pg.image.load(card.image).convert()
+                real_image_background.blit(card_image, dest=(2, 15))
+
+            card_image_dict[type(card)] = real_image_background
+            real_image = real_image_background
+        return real_image
     else:
         return card_back_image
 
@@ -229,7 +259,7 @@ def screen_generator():
                                              (card_on_zone(hand2_center)[0] - len(cards_shown_dict[player2.hand]) + i*20, card_on_zone(hand2_center)[1])
                                              )
 
-        if board.holding:
+        if isinstance(board.holding, TCG.Card):
             gamecomponents[board.holding] = SURF.blit(
                 get_card_image(board.holding) if isinstance(board.holding, TCG.Card) else card_back_image,
                 tuple(sum(elem) for elem in zip(pg.mouse.get_pos(), (-50, -70)))
@@ -282,7 +312,9 @@ def screen_generator():
         if board.holding:
             # On nowhere -> Show card itself
             if len(hovering) == 1:
-                explanation = get_card_explanation(hovering[0])
+                explanation = get_card_explanation(hovering[0]) \
+                              if isinstance(hovering[0], TCG.Card) \
+                              else get_gamecomponent_explanation(hovering[0])
             # On place -> Show place information
             else:
                 key, str = get_key_priority(hovering[:-1])
