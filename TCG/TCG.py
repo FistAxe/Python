@@ -1,4 +1,4 @@
-from typing import Callable, Literal, Union, List
+from typing import Callable, Literal, Union, List, Any
 LOSE = 'lose'
 
 class GameComponent:
@@ -50,7 +50,16 @@ class Card(GameComponent):
     @location.setter
     def location(self, new_location):
         if self._location != new_location:
+            if self.location:
+                print(f'location changed from {self.location} to {new_location}.')
+                if isinstance(self.location, Deck):
+                    self.on_face = True
+                self.location.remove(self)
+        if new_location:
             self._location = new_location
+        else:
+            print(f'{self} moved to {new_location}. Delete self.')
+            del self
 
     def on_top(self):
         if isinstance(self.location, Zone) or isinstance(self.location, Deck):
@@ -68,6 +77,8 @@ class Card(GameComponent):
                     return 'full'
                 else:
                     return 'half'
+            elif isinstance(self.location, Hand):
+                return 'hand'
             elif isinstance(self.location, Graveyard) and self.on_top():
                 return 'full'
             else:
@@ -107,7 +118,7 @@ class Effect:
     
     def is_valid(self):
         if isinstance(self.bind_to, Card):
-            if self.bind_to.on_face:
+            if self.bind_to.is_revealed():
                 return True
             else:
                 return False
@@ -136,9 +147,13 @@ class EffectBlock:
         # If there's no matching index:
         raise Exception('Effectblock not included in Effect!')
     
-    def add_parameter(self, param:dict):
-        for key in param:
-            setattr(self, key, param[key])
+    def add_parameter(self, param:dict[str, Any]|None):
+        if param:
+            for key in param:
+                setattr(self, key, param[key])
+
+    def give_parameter(self, param:dict|None):
+        return param
 
 class Condition(EffectBlock):
     def __init__(self, effect:Effect, check:Callable[..., bool|int]|None=None):
@@ -146,11 +161,11 @@ class Condition(EffectBlock):
         if check:
             self.check = check
 
-    def check(self, in_action=None) -> bool|int :
+    def check(self, in_action:'Action|bool'=False) -> bool|int :
         return False
 
 class Restriction(EffectBlock):
-    def verify(self, act:'EffectBlock') -> bool:
+    def verify(self, eb:'EffectBlock') -> bool:
         return True
 
 class Choice(EffectBlock):
@@ -172,9 +187,6 @@ class Choice(EffectBlock):
     def match(self, key:GameComponent|str|None, index:int|None) -> bool:
         return True
 
-    def make_target(self) -> dict[str, GameComponent]|None:
-        return None
-
 class Action(EffectBlock):
     def process(self) -> bool|str:
         '''return true'''
@@ -189,9 +201,9 @@ class ActionGen(EffectBlock):
         return self.action(**param)
 
 class Let(Action):
-    def __init__(self, effect:Effect, zone:'Zone'):
+    def __init__(self, effect:Effect, zone:'Zone', card:Card):
         super().__init__(effect)
-        self.card: Card|None = None
+        self.card = card
         self.zone = zone
 
     def process(self):
@@ -246,11 +258,12 @@ class Pack(GameComponent):
 
         def match(self, key:GameComponent|None, index:int|None):
             if self.effect.board.holding_from != key and self.key == key:
+                print(f'Dragged into {self.effect.bind_to}!')
                 return True
             else:
                 return False
             
-        def make_target(self):
+        def give_parameter(self, param:dict):
             return {'card': self.effect.board.holding}
 
     def __init__(self, halfboard:'HalfBoard'):
@@ -271,8 +284,6 @@ class Pack(GameComponent):
     def remove(self, card:Card):
         if card in self._cards:
             self._cards.remove(card)
-            if card.location == self:
-                card.location = None
         else:
             raise Exception('No such Card in this Pack!')
 
@@ -280,9 +291,7 @@ class Pack(GameComponent):
         if self.is_empty():
             raise Exception("Tryed to pop an Empty Pack!")
         else:
-            card = self._cards[index] if index else self._cards[-1]
-            self.remove(card)
-            return card
+            return self._cards[index] if index else self._cards[-1]
 
     def is_empty(self, num=None):
         if num:
@@ -409,6 +418,19 @@ class MainZone(Zone):
                 return self.effect.bind_to.is_for_current_player() and \
                        not self.effect.bind_to.halfboard.board.turn_end
             
+        class _MainZoneLetActionGen(ActionGen):
+            effect:'MainZone._LetEffect'
+            action:type['MainZone._LetEffect._MainZoneLetAction']
+            def __init__(self, effect:'MainZone._LetEffect'):
+                super().__init__(effect, MainZone._LetEffect._MainZoneLetAction)
+
+            def generate(self, card:Card|None=None):
+                if card:
+                    self.card = card
+                if not self.card:
+                    raise Exception('No card to Let!')
+                return self.action(self.effect, self.effect.bind_to, self.card)
+
         class _MainZoneLetAction(Let):
             '''Let 후 turn_end 활성화'''
             def process(self):
@@ -422,7 +444,7 @@ class MainZone(Zone):
             self.effectblocks = [
                 EffChain(self._MainZoneLetCondition(self), 1, None),
                 EffChain(bind_to.DragIntoPackChoice(self), 2, None),
-                EffChain(self._MainZoneLetAction(self, self.bind_to), None, None)
+                EffChain(self._MainZoneLetActionGen(self), None, None)
             ]
 
     class _MainZoneCollapseEffect(Effect):
@@ -455,10 +477,13 @@ class SubZone(Zone):
             return result
         
     class _LetEffect(Effect):
+        bind_to: 'SubZone'
         class _InitLetCondition(Condition):
+            '''"Idle이면서" "초기화 전이면"'''
             effect: 'SubZone._LetEffect'
-            def check(self, in_action:Action):
-                if in_action and isinstance(in_action, Deploy) and self.effect.bind_to.init_card:
+            def check(self, in_action:Action|None):
+                if not in_action and self.effect.bind_to.init_card:
+                    print(f'Init card {self.effect.bind_to.init_card} in {self.effect.bind_to}.')
                     return True
                 else:
                     return False
@@ -467,6 +492,22 @@ class SubZone(Zone):
             '''"자기 턴이면"'''
             def check(self, in_action=None):
                 return self.effect.bind_to.is_for_current_player()
+            
+        class _SubZoneLetActionGen(ActionGen):
+            effect:'SubZone._LetEffect'
+            action:type['SubZone._LetEffect._SubZoneLetAction']
+            def __init__(self, effect:'SubZone._LetEffect'):
+                super().__init__(effect, SubZone._LetEffect._SubZoneLetAction)
+
+            def generate(self, card:Card|None=None):
+                if card:
+                    self.card = card
+                if not hasattr(self, 'card') or self.card == None:
+                    if self.effect.bind_to.init_card:
+                        self.card = self.effect.bind_to.init_card
+                    else:
+                        raise Exception('No card to Let!')
+                return self.action(self.effect, self.effect.bind_to, self.card)
             
         class _SubZoneLetAction(Let):
             effect: 'SubZone._LetEffect'
@@ -484,23 +525,26 @@ class SubZone(Zone):
                 EffChain(self._SubZoneLetCondition(self), 1, None),
                 EffChain(self._InitLetCondition(self), 3, 2),   # Pass Choice if Init.
                 EffChain(bind_to.DragIntoPackChoice(self), 3, None),
-                EffChain(self._SubZoneLetAction(self, self.bind_to), None, None)
+                EffChain(self._SubZoneLetActionGen(self), None, None)
             ]
 
     class _SubZoneCollapseEffect(Effect):
         bind_to: 'SubZone'
         class _SubZoneCollapseCondition(Condition):
-            '''"비어 있음" "초기화 끝남"'''
+            '''"비어 있음" "초기화 끝남" "자기 자신 처리 중 아님"'''
             effect:'SubZone._SubZoneCollapseEffect'
-            def check(self, in_action=None) -> bool | int:
+            def check(self, in_action:Action|bool) -> bool | int:
                 return self.effect.bind_to.is_empty() and \
-                       not bool(self.effect.bind_to.init_card)
+                       not bool(self.effect.bind_to.init_card) and \
+                       bool(self.effect != in_action.effect if isinstance(in_action, Action) else True)
         class _SubZoneCollapseActionGen(ActionGen):
-            def __init__(self, effect: Effect):
+            action: type['SubZone.SubZoneCollapse']
+            effect: 'SubZone._SubZoneCollapseEffect'
+            def __init__(self, effect: 'SubZone._SubZoneCollapseEffect'):
                 super().__init__(effect, SubZone.SubZoneCollapse)
 
             def generate(self, **param):
-                return self.action(self.effect)
+                return self.action(self.effect, self.effect.bind_to)
             
         def __init__(self, bind_to: 'Zone'):
             super().__init__(bind_to)
@@ -555,7 +599,7 @@ class Row(GameComponent):
                 else:
                     return False
                 
-            def make_target(self):
+            def give_parameter(self, param):
                 return {'card': self.effect.board.holding,
                         'subzone_index': self.subzone_index}
             
@@ -648,6 +692,25 @@ class Activate(Action):
 class Board(GameComponent):
     class End(Exception):
         pass
+
+    class CoreRestrictionEffect(Effect):
+        class CoreRestriction(Restriction):
+            '''"EffectBlock의 Effect가 유효할 것."'''
+            def verify(self, eb:EffectBlock):
+                if eb.effect.is_valid():
+                    return True
+                else:
+                    return False
+                
+        def __init__(self, bind_to: 'Board'):
+            super().__init__(bind_to)
+            self.effectblocks = [
+                EffChain(self.CoreRestriction(self))
+                ]
+            
+        def is_valid(self):
+            '''Core rule은 언제나 valid.'''
+            return True
 
     class InitialSetting(Effect):
         def __init__(self, board:'Board'):
@@ -760,6 +823,7 @@ class Board(GameComponent):
             elif isinstance(key, Deck):
                 self.holding_from = key
                 self.holding = key
+            print(f'you are holding {self.holding} from {self.holding_from}.')
             return True
         
         elif typ == 'drop':
@@ -772,9 +836,7 @@ class Board(GameComponent):
         return False
 
     def drop_holding(self):
-        if self.holding and self.holding_from and isinstance(self.holding, Card):
-            if self.holding.location == None or self.holding.location != self.holding_from:
-                self.holding_from.remove(self.holding)
+        print(f'you dropped {self.holding}.')
         self.holding = None
         self.holding_from = None
 
@@ -784,6 +846,8 @@ class Board(GameComponent):
                 if not restriction.verify(eb):
                     print('restriction met!')
                     return False
+            else:
+                self.restrictions.remove(restriction)
         return True
 
     # 미완
@@ -819,12 +883,10 @@ class Board(GameComponent):
             # Check each EffectBlock with current restrictions.
             if not self.verify_restriction(eb):
                 return False
-
+            if param:
+                eb.add_parameter(param)
             # Conditions
             if isinstance(eb, Condition):
-                if param:
-                    eb.add_parameter(param)
-
                 if not eb.check(in_action):
                     if effectchain.false:
                         effectchain = effect.effectblocks[effectchain.false]
@@ -836,7 +898,8 @@ class Board(GameComponent):
                     raise Exception('No instruction after Condition!')
             # Restrictions
             elif isinstance(eb, Restriction):
-                self.restrictions.append(eb)
+                if eb not in self.restrictions:
+                    self.restrictions.append(eb)
                 if effectchain.true:
                     effectchain = effect.effectblocks[effectchain.true]
                 else:
@@ -847,7 +910,6 @@ class Board(GameComponent):
                     self.current_player.available_choices.append(eb)
                     return True
                 else:
-                    param = eb.make_target()
                     if effectchain.true:
                         effectchain = effect.effectblocks[effectchain.true]
                     else:
@@ -860,17 +922,19 @@ class Board(GameComponent):
                     param = None
                 else:
                     action = eb.generate()
+                print(f'Action {eb} appended.')
                 self.action_stack.append(action)
                 return True
             # Actions
             elif isinstance(eb, Action):
                 if param:
-                    eb.add_parameter(param)
                     param = None
                 self.action_stack.append(eb)
                 return True
             else:
                 raise Exception('Not right EffectBlock!')
+            
+            param = eb.give_parameter(param)
 
     def search_effect(self, in_action:Action|bool=False):
         # Search Mode: In action or Idle.
@@ -913,26 +977,33 @@ class Board(GameComponent):
                         # Action stack is not empty.
                         while len(self.action_stack) > 0:
                             current_action = self.action_stack[0]
+                            print(f'Current Action:{current_action}. Start searching chain.')
                             self.search_effect(current_action)  # Trigger Mode
 
                             # Action was kept; No Chain.
                             if current_action == self.action_stack[0]:
+                                print('No chain.')
                                 # Passes restriction.
                                 if self.verify_restriction(current_action):
+                                    print('processing...')
                                     result = current_action.process()
                                     if result == 'end':
                                         raise self.End
                                 # Doesn't pass restriction -> Nothing happens.
-
+                                else:
+                                    print("Action couldn't pass restriction.")
                                 # action removal.
+                                print(f"{current_action} is removed.")
                                 self.action_stack.remove(current_action)
                             # If Action changed, run another search. pass.
 
                         # There are no action. Run idle search.
+                        print('Action stack emptied.')
                         # Chain is over; No holding card.
                         self.drop_holding()
                         # Initialize choices.
                         self.current_player.available_choices = []
+                        print('Try Idle Search.')
                         self.search_effect()    # Idle Mode
                         # Escape if there's still no action.
                         if len(self.action_stack) == 0:
@@ -945,6 +1016,7 @@ class Board(GameComponent):
                         continue
 
                     # Else, Player choose what to do.
+                    print('No Idle Action. Can choose now.')
                     chossing = True
                     while chossing:
                         args: tuple[Literal['click', 'drop'], list, int|None] = yield
@@ -958,6 +1030,7 @@ class Board(GameComponent):
                                 self.drop_holding()
                             # If choice is valid, break. Give the output action to the stack.
                             elif isinstance(choice, Choice):
+                                print(f'your choice is {choice}.')
                                 chossing = False
                                 self.handle_effect(choice.effect, choice)
                         else:

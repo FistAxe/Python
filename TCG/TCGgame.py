@@ -37,7 +37,9 @@ ROW5 = ROW4 + ROW_HEIGHT
 ROW6 = ROW5 + ROW_HEIGHT
 
 CARD_SIZE = [90, 120]
+CARD_NAME_HEIGHT = 10
 card_back_image = pg.image.load('./image/card_back.png').convert()
+card_front_image = pg.image.load('./image/card_front.png').convert()
 TITLE_FONT = pg.font.SysFont('Gulim', 40)
 EXP_FONT = pg.font.SysFont('Gulim', 15)
 
@@ -128,6 +130,17 @@ board = TCG.Board(player1, player2)
 
 cardlist = []
 
+hovering = []
+clicking = []
+unclicking = []
+making_subzone = 0
+
+def get_card_image(card:TCG.Card):
+    if card.is_revealed():
+        return card_front_image
+    else:
+        return card_back_image
+
 def get_key_priority(keys:list[str]):
     priority_order = [
         TCG.MainZone,
@@ -145,11 +158,6 @@ def get_key_priority(keys:list[str]):
                 if isinstance(key, type):
                     return key, 'comp'
     return None, 'None'
-
-hovering = []
-clicking = []
-unclicking = []
-making_subzone = 0
 
 def screen_generator():
     def board_generator():
@@ -185,7 +193,7 @@ def screen_generator():
                     gamecomponents[player1.row.subzones[subzone_index]] = SURF.blit(sz_template, pos)
 
     def card_generator():
-        cards_shown_dict: dict[TCG.GameComponent, list] = {}
+        cards_shown_dict: dict[TCG.GameComponent, list[TCG.Card]] = {}
         for key in gamecomponents:
             # Ignore cardlist generation on temp zone
             if isinstance(key, TCG.Pack) or isinstance(key, TCG.Hand):
@@ -197,29 +205,34 @@ def screen_generator():
         # ROW5
         for subzone in [key for key in gamecomponents if isinstance(key, TCG.SubZone)]:
             for i, card in enumerate(cards_shown_dict[subzone]):
-                gamecomponents[card] = SURF.blit(card_back_image,
-                                                 (gamecomponents[subzone].x + ZONE_MARGIN, gamecomponents[subzone].y + ZONE_MARGIN + 4*i)
+                gamecomponents[card] = SURF.blit(get_card_image(card),
+                                                 (gamecomponents[subzone].x + ZONE_MARGIN,
+                                                  gamecomponents[subzone].y + ZONE_MARGIN + CARD_NAME_HEIGHT*i)
                                                  )
         for i, card in enumerate(cards_shown_dict[player1.deck]):
-            gamecomponents[card] = SURF.blit(card_back_image, (card_on_zone(deck1_rv)[0], card_on_zone(deck1_rv)[1] + 4*i))
+            gamecomponents[card] = SURF.blit(get_card_image(card), (card_on_zone(deck1_rv)[0], card_on_zone(deck1_rv)[1] + 4*i))
         # ROW4
         for i, card in enumerate(cards_shown_dict[player1.main_zone]):
-            gamecomponents[card] = SURF.blit(card_back_image, (card_on_zone(mz1_rv)[0], card_on_zone(mz1_rv)[1] + 4*i))
+            gamecomponents[card] = SURF.blit(get_card_image(card),
+                                             (card_on_zone(mz1_rv)[0],
+                                              card_on_zone(mz1_rv)[1] + CARD_NAME_HEIGHT*i)
+                                              )
         for i, card in enumerate(cards_shown_dict[player1.graveyard]):
-            gamecomponents[card] = SURF.blit(card_back_image, (card_on_zone(gy1_rv)[0], card_on_zone(gy1_rv)[1] + 4*i))
+            gamecomponents[card] = SURF.blit(get_card_image(card), (card_on_zone(gy1_rv)[0], card_on_zone(gy1_rv)[1] + 4*i))
         # HAND
         for i, card in enumerate(cards_shown_dict[player1.hand]):
-            gamecomponents[card] = SURF.blit(card_back_image,
+            gamecomponents[card] = SURF.blit(get_card_image(card),
                                              (card_on_zone(hand1_center)[0] - len(cards_shown_dict[player1.hand]) + i*20, card_on_zone(hand1_center)[1])
                                              )
         for i, card in enumerate(cards_shown_dict[player2.hand]):
-            gamecomponents[card] = SURF.blit(card_back_image,
+            gamecomponents[card] = SURF.blit(get_card_image(card),
                                              (card_on_zone(hand2_center)[0] - len(cards_shown_dict[player2.hand]) + i*20, card_on_zone(hand2_center)[1])
                                              )
 
         if board.holding:
             gamecomponents[board.holding] = SURF.blit(
-                card_back_image, tuple(sum(elem) for elem in zip(pg.mouse.get_pos(), (-50, -70)))
+                get_card_image(board.holding) if isinstance(board.holding, TCG.Card) else card_back_image,
+                tuple(sum(elem) for elem in zip(pg.mouse.get_pos(), (-50, -70)))
                 )
 
     def explanation_generator():
@@ -296,6 +309,7 @@ def screen_generator():
     card_generator()
     explanation_generator()
 
+# Start
 gameplay = board.play()
 next(gameplay)
 
@@ -328,7 +342,7 @@ while REFRESH:
                     hovering.append(key)
             
             # Below is only for subzone indexing.
-            if board.holding and len(board.current_player.row.subzones) < 3:
+            if board.current_player == player1 and board.holding and len(board.current_player.row.subzones) < 3:
                 # On row, but not on Subzone.
                 if any(isinstance(comp, TCG.Row) for comp in hovering) and not any(isinstance(comp, TCG.SubZone) for comp in hovering):
                     subzone_x = []
@@ -354,7 +368,7 @@ while REFRESH:
                 keys = []
                 for key in gamecomponents:
                     if gamecomponents[key].collidepoint(pg.mouse.get_pos()):
-                        print(f'you clicked {key}.')
+                        #print(f'you clicked {key}.')
                         keys.append(key)
                 calculate(('click', keys, None))
             else:
@@ -365,7 +379,7 @@ while REFRESH:
             keys = []
             for key in gamecomponents:
                 if gamecomponents[key].collidepoint(pg.mouse.get_pos()):
-                    print(f'you unclicked {key}.')
+                    #print(f'you unclicked {key}.')
                     keys.append(key)
             if board.holding:
                 ans = calculate(('drop', keys, making_subzone))
