@@ -8,5 +8,12 @@ TCG.py
 
 TCGgame.py
 ----------
-
 pygame 활용 ui
+
+TCGcardlist.py
+--------------
+카드 목록
+
+TCGplayer.py
+------------
+덱 목록록
