@@ -1,4 +1,5 @@
 from typing import Callable, Literal, Union, List, Any
+from random import shuffle
 LOSE = 'lose'
 
 class GameComponent:
@@ -418,49 +419,6 @@ class Pack(GameComponent):
         else:
             return True if self.length == 0 else False
 
-class Zone(Pack):
-    class Collapse(Action):
-        def __init__(self, effect: Effect, zone: 'Zone'):
-            super().__init__(effect)
-            self.zone = zone
-
-        def process(self) -> bool | str:
-            if self.zone.is_empty():
-                return True
-            else:
-                que = []
-                for card in self.zone._cards:
-                    que.append(Discard(self.effect, card))
-                for action in reversed(que):
-                    self.effect.board.add_action(action, True)
-                return 'chain'
-
-    class _ZoneCollapseCondition(Condition):
-        '''"자기 턴이고" "그 턴이 끝났고" "Let 된 적 없고" "예약되지 않았으면"'''
-        def __init__(self, effect: Effect):
-            super().__init__(effect)
-        
-        def check(self, in_action: Action|bool):
-            if isinstance(self.effect.bind_to, Zone):
-                return super().check(in_action) and \
-                       self.effect.bind_to.is_for_current_player() and \
-                       self.effect.board.turn_end and \
-                       not self.effect.bind_to.has_been_let and \
-                       not self.effect.is_reserved()
-            else:
-                raise Exception('Effect has no Zone!')
-
-    def __init__(self, halfboard:'HalfBoard'):
-        super().__init__(halfboard)
-        self.name = 'error: not specific zone'
-        self.has_been_let = False
-
-    def on_top(self):
-        if not self.is_empty():
-            return self._cards[0]
-        else:
-            return None
-
 class Deck(Pack):
     class _DrawAction(Action):
         '''단독으로 쓰지 말 것'''
@@ -531,6 +489,10 @@ class Deck(Pack):
             return self._cards[0]
         else:
             return None
+        
+    def shuffle(self):
+        '''나중에 셔플 유발 효과가 생기면 통째로 Action으로 변경'''
+        shuffle(self._cards)
 
 class Graveyard(Pack):
     def __init__(self, halfboard):
@@ -538,7 +500,7 @@ class Graveyard(Pack):
 
     def on_top(self):
         if not self.is_empty():
-            return self._cards[0]
+            return self._cards[-1]
         else:
             return None
 
@@ -546,6 +508,49 @@ class Hand(Pack):
     def __init__(self, halfboard:'HalfBoard'):
         super().__init__(halfboard)
         self.name = f"{self.halfboard.name}'s hand"
+
+class Zone(Pack):
+    class Collapse(Action):
+        def __init__(self, effect: Effect, zone: 'Zone'):
+            super().__init__(effect)
+            self.zone = zone
+
+        def process(self) -> bool | str:
+            if self.zone.is_empty():
+                return True
+            else:
+                que = []
+                for card in self.zone._cards:
+                    que.append(Discard(self.effect, card))
+                for action in reversed(que):
+                    self.effect.board.add_action(action, True)
+                return 'chain'
+
+    class _ZoneCollapseCondition(Condition):
+        '''"자기 턴이고" "그 턴이 끝났고" "Let 된 적 없고" "예약되지 않았으면"'''
+        def __init__(self, effect: Effect):
+            super().__init__(effect)
+        
+        def check(self, in_action: Action|bool):
+            if isinstance(self.effect.bind_to, Zone):
+                return super().check(in_action) and \
+                       self.effect.bind_to.is_for_current_player() and \
+                       self.effect.board.turn_end and \
+                       not self.effect.bind_to.has_been_let and \
+                       not self.effect.is_reserved()
+            else:
+                raise Exception('Effect has no Zone!')
+
+    def __init__(self, halfboard:'HalfBoard'):
+        super().__init__(halfboard)
+        self.name = 'error: not specific zone'
+        self.has_been_let = False
+
+    def on_top(self):
+        if not self.is_empty():
+            return self._cards[-1]
+        else:
+            return None
 
 class MainZone(Zone):
     class MainZoneCollapse(Zone.Collapse):
@@ -933,6 +938,7 @@ class Board(GameComponent):
         return order
 
     def initial_setting(self):
+        '''시작 시 5장 뽑기. 여기서부터는 효과 처리가 필요하다.'''
         a = self.InitialSetting(self)
         drawactiongen = a.effectblocks[0][0]
         a1 = drawactiongen.generate(effect=a, deck=self.player1.deck, num=5)
@@ -1107,6 +1113,8 @@ class Board(GameComponent):
             else:
                 for cardclass in player.cardlist:
                     player.deck.append(cardclass(player))
+
+            player.deck.shuffle()
 
         self.initial_setting()
         # Debug

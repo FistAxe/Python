@@ -229,11 +229,30 @@ def screen_generator():
             if isinstance(key, TCG.Pack) or isinstance(key, TCG.Hand):
                 cards_shown_dict[key] = key._cards.copy()
         # Holding card is not shown on its place
-        if board.holding_from in cards_shown_dict:
-            cards_shown_dict[board.holding_from].pop()
+        if board.holding_from in cards_shown_dict and board.holding in cards_shown_dict[board.holding_from]:
+            cards_shown_dict[board.holding_from].remove(board.holding)
 
+        # ROW2
+        for subzone in [key for key in gamecomponents if isinstance(key, TCG.SubZone) and key.halfboard == player2]:
+            for i, card in enumerate(cards_shown_dict[subzone]):
+                gamecomponents[card] = SURF.blit(pg.transform.flip(get_card_image(card), True, True),
+                                                 ((gamecomponents[subzone].x + ZONE_MARGIN,
+                                                  gamecomponents[subzone].y + ZONE_MARGIN - CARD_NAME_HEIGHT*i))
+                                                 )
+        for i, card in enumerate(cards_shown_dict[player2.deck]):
+            gamecomponents[card] = SURF.blit(pg.transform.flip(get_card_image(card), True, True),
+                                             (card_on_zone(deck2_rv)[0], card_on_zone(deck2_rv)[1] - 4*i))
+        # ROW3
+        for i, card in enumerate(cards_shown_dict[player2.graveyard]):
+            gamecomponents[card] = SURF.blit(pg.transform.flip(get_card_image(card), True, True),
+                                             (card_on_zone(gy2_rv)[0], card_on_zone(gy2_rv)[1] - 4*i))
+        for i, card in enumerate(cards_shown_dict[player2.main_zone]):
+            gamecomponents[card] = SURF.blit(pg.transform.flip(get_card_image(card), True, True),
+                                             (card_on_zone(mz2_rv)[0],
+                                              card_on_zone(mz2_rv)[1] - CARD_NAME_HEIGHT*i)
+                                              )
         # ROW5
-        for subzone in [key for key in gamecomponents if isinstance(key, TCG.SubZone)]:
+        for subzone in [key for key in gamecomponents if isinstance(key, TCG.SubZone) and key.halfboard == player1]:
             for i, card in enumerate(cards_shown_dict[subzone]):
                 gamecomponents[card] = SURF.blit(get_card_image(card),
                                                  (gamecomponents[subzone].x + ZONE_MARGIN,
@@ -255,7 +274,7 @@ def screen_generator():
                                              (card_on_zone(hand1_center)[0] - len(cards_shown_dict[player1.hand]) + i*20, card_on_zone(hand1_center)[1])
                                              )
         for i, card in enumerate(cards_shown_dict[player2.hand]):
-            gamecomponents[card] = SURF.blit(get_card_image(card),
+            gamecomponents[card] = SURF.blit(pg.transform.flip(card_back_image, True, True),
                                              (card_on_zone(hand2_center)[0] - len(cards_shown_dict[player2.hand]) + i*20, card_on_zone(hand2_center)[1])
                                              )
 
