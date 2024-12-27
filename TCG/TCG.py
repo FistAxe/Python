@@ -13,6 +13,8 @@ class GameComponent:
     def halfboard(self):
         if isinstance(self, HalfBoard):
             return self
+        elif isinstance(self, Card):
+            return self.owner
         else:
             return self._halfboard
     
@@ -41,6 +43,7 @@ class Card(GameComponent):
         self._name = name
         self._color = color
         self._speed: int|None = speed
+        self._power: int|None = None
         self._discription = discription
         self._image = image
 
@@ -71,6 +74,14 @@ class Card(GameComponent):
     @property
     def speed(self) -> int|None:
         return self.full_attr(self._speed)
+    
+    @property
+    def power(self) -> int|None:
+        return self.full_attr(self._power)
+    
+    @power.setter
+    def power(self, new_power:int|None):
+        self._power = new_power
     
     @property
     def effects(self) -> list['Effect']:
@@ -132,6 +143,8 @@ class Card(GameComponent):
         
     def full_attr(self, _value):
         if self.reveal_type() == 'full':
+            return _value
+        elif self.reveal_type() == 'hand':
             return _value
         else:
             return None
@@ -254,9 +267,22 @@ class Restriction(EffectBlock):
         return True
 
 class Choice(EffectBlock):
-    def __init__(self, effect: Effect, key:GameComponent|Literal['temp zone']|None=None):
+    image: str|None = None
+    def __init__(self, effect: Effect, key:GameComponent|Literal['temp zone']|None=None,
+                 has_button:bool=False, image:str|None=None):
         super().__init__(effect)
-        self._key = key
+        self.is_button: bool = False
+        if key:
+            self._key = key
+        elif has_button:
+            if isinstance(self.effect.bind_to, Card):
+                self.is_button = True
+                self.image = image
+                self._key = self
+            else:
+                raise Exception('Button must be on Card!')
+        else:
+            self._key = self.effect.bind_to
 
     @property
     def key(self):
@@ -269,8 +295,8 @@ class Choice(EffectBlock):
     def key(self, key:GameComponent):
         self._key = key
 
-    def match(self, key:GameComponent|str|None, index:int|None) -> bool:
-        return True
+    def match(self, key:'GameComponent|str|Choice|None', index:int|None) -> bool:
+        return True if self.key == key else False
 
 class Action(EffectBlock):
     def process(self) -> bool|str:
@@ -377,7 +403,7 @@ class Pack(GameComponent):
             return self
 
         def match(self, key:GameComponent|None, index:int|None):
-            if self.effect.board.holding_from != key and self.key == key:
+            if self.effect.board.holding_from != self.key and self.key == key:
                 print(f'Dragged into {self.effect.bind_to}!')
                 return True
             else:
@@ -475,7 +501,7 @@ class Deck(Pack):
                 EffChain(self.bind_to.IsEmptyCondition(self), 4, 2),
                 EffChain(self._TurnDrawChoice(self, deck), 3, None),
                 EffChain(self._TurnDrawActionGen(self), None, None),
-                EffChain(self.bind_to.halfboard.LoseAction(self), None, None)
+                EffChain(self.bind_to.halfboard.get_loseaction(self), None, None)
             ]
 
     def __init__(self, halfboard):
@@ -802,19 +828,15 @@ class HalfBoard(GameComponent):
     cardlist: list[type[Card]] = []
 
     class _LoseAction(Action):
-        def __init__(self, halfboard:'HalfBoard'):
-            self.halfboard = halfboard
-
-        def __call__(self, effect):
+        def __init__(self, effect: Effect, loser:'HalfBoard'):
             super().__init__(effect)
-            return self
+            self.loser = loser
 
         def process(self):
-            self.effect.board.loser = self.halfboard
+            self.effect.board.loser = self.loser
             raise Board.End
 
     def __init__(self, player_name:str):
-        self.LoseAction = self._LoseAction(self)
         self.name = player_name
         self.deck = Deck(self)
         self.graveyard = Graveyard(self)
@@ -823,7 +845,6 @@ class HalfBoard(GameComponent):
         self.hand = Hand(self)
         self.effects: list[Effect] = []
         self.available_choices: list[Choice] = []
-
 
     @property
     def zones(self):
@@ -838,6 +859,9 @@ class HalfBoard(GameComponent):
 
     def get_suborder(self):
         return len(self.row.subzones)
+
+    def get_loseaction(self, effect:Effect):
+        return self._LoseAction(effect, self)
 
 class Board(GameComponent):
     class End(Exception):
@@ -884,7 +908,7 @@ class Board(GameComponent):
         for player in self.players:
             player._board = self
 
-        self.holding: GameComponent|str|None = None
+        self.holding: GameComponent|Choice|str|None = None
         self.holding_from = None
         self.gamecomponents: list[Board|HalfBoard|Row|Pack|Card] = []
 
@@ -946,20 +970,29 @@ class Board(GameComponent):
         a2 = drawactiongen.generate(effect=a, deck=self.player2.deck, num=5)
         a2.process()
 
-    def interpret(self, typ:Literal['click', 'drop'], keys:list[Pack|Card|str], index:int|None=None):
+    def interpret(self, typ:Literal['click', 'drop'], keys:list[GameComponent|Choice|str], index:int|None=None):
         # Key selection
         key = None
-        for k in keys:
-            if isinstance(k, str) or isinstance(k, Deck) or isinstance(k, Graveyard) or isinstance(k, Zone):
-                key = k
-                break
-            # If there is only Hand and card, return card.
-            elif isinstance(k, Card):
-                key = k
-            elif isinstance(k, Board) or isinstance(k, HalfBoard) or isinstance(k, Row):
-                pass
+
+        def key_searcher(keys, typ:type, sort:Literal['first', 'last']='first'):
+            instances = [key for key in keys if isinstance(key, typ)]
+            if instances:
+                if sort == 'first':
+                    return instances[0]
+                elif sort == 'last':
+                    return instances[-1]
+                else:
+                    raise Exception("sort isn't 'first' or 'last'!")
             else:
-                raise Exception('Something weird in keys!')
+                return None
+            
+        for keytype in [Choice, str, Deck, Graveyard, Zone, Card, Row, HalfBoard, Board]:
+            if keytype == Card:
+                if key := key_searcher(keys, keytype, 'last'):
+                    break
+            else:
+                if key := key_searcher(keys, keytype):
+                    break
         
         if typ == 'click':
             if isinstance(key, str):
@@ -967,7 +1000,10 @@ class Board(GameComponent):
                 self.holding_from = None
                 print(f'you clicked {key}.')
             else:
-                if isinstance(key, Card):
+                if isinstance(key, Choice):
+                    self.holding = key
+                    self.holding_from = key.effect.bind_to
+                elif isinstance(key, Card):
                     self.holding = key
                     self.holding_from = self.holding.location
                 elif isinstance(key, Zone) or isinstance(key, Graveyard):
@@ -1230,19 +1266,18 @@ class Board(GameComponent):
             except self.End:
                 print('Game Finished!')
                 if not self.loser:
-                    self.lose(self.current_player)
-                yield 'end!'
-            # If there's no self.loser, loop will remain.
+                    self.loser = self.current_player
+                    print('game ended, but loser is not clear. '
+                          f'the opponent {self.opponent(self.loser)} survives.')
+                yield 'end!'    # After this, No more play() call.
+            # try-except end
 
-    def lose(self, player:HalfBoard):
-        self.loser = player
-        print(f'game end! {self.opponent(self.loser)} survives.')
-        return 'end'
+        # After self.loser
+        raise Exception('UI calls finished game!')
 
-
-#input player 1, 2 {name, deck, etc}
-#player1 = HalfBoard('Player 1')
-#player2 = HalfBoard('Player 2')
-#game = Board(player1, player2)
-
-#game.play()
+# Usage:
+#   input player 1, 2 {name, deck, etc}
+#   player1 = HalfBoard('Player 1')
+#   player2 = HalfBoard('Player 2')
+#   game = Board(player1, player2)
+#   game.play()

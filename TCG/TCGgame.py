@@ -6,23 +6,26 @@ from typing import Union, Literal
 
 pg.init()
 
+# Screen Size
 WIDTH = 1280
 HEIGHT = 768
 
-SURF = pg.display.set_mode((WIDTH, HEIGHT))
-
+# Color Definition
 WHITE = pg.Color(255, 255, 255)
 BLACK = pg.Color(0, 0, 0)
 BOARD_BG = pg.Color(230, 230, 255)
 ROW_BG = pg.Color(200, 200, 255)
 GY_BG = pg.Color(200, 200, 200)
-SURF.fill(WHITE)
 
+# Screen Init
+SURF = pg.display.set_mode((WIDTH, HEIGHT))
 pg.display.set_caption('TCG')
+SURF.fill(WHITE)
 
 FPS = pg.time.Clock()
 FPS.tick(60)
 
+# Layout Definition
 RIGHT_MARGINE = 400
 BOARD_MARGIN = 5
 LINE_WIDTH = 3
@@ -37,23 +40,55 @@ ROW4 = ROW3 + ROW_HEIGHT
 ROW5 = ROW4 + ROW_HEIGHT
 ROW6 = ROW5 + ROW_HEIGHT
 
+# Card Definition
 CARD_SIZE = [90, 120]
-CARD_NAME_HEIGHT = 10
+CARD_NAME_HEIGHT = 12
 card_back_image = pg.image.load('./images/card_back.png').convert()
 card_front_image = pg.image.load('./images/card_front.png').convert()
 card_front_R = pg.image.load('./images/card_front_R.png').convert()
 card_front_Y = pg.image.load('./images/card_front_Y.png').convert()
 card_front_B = pg.image.load('./images/card_front_B.png').convert()
-TITLE_FONT = pg.font.SysFont('Gulim', 40)
-EXP_FONT = pg.font.SysFont('Gulim', 15)
 
+
+# Card Fonts
+NAME_FONT = pg.font.SysFont('Gulim', 11)
+POWER_FONT = pg.font.SysFont('Segoe UI Black', 16, italic=True)
+SPEED_FONT = pg.font.SysFont('Verdana', 13, bold=True)
+NAME_COORD = (3, 2)
+POWER_COORD = (5, 98)
+SPEED_COORD = (5, 70)
+power_dict: dict[int, pg.Surface] = {}
+speed_dict: dict[int, pg.Surface] = {}
+speed_dict[1] = SPEED_FONT.render('I', False, BLACK)
+speed_dict[2] = SPEED_FONT.render('II', False, BLACK)
+speed_dict[3] = SPEED_FONT.render('III', False, BLACK)
+speed_dict[4] = SPEED_FONT.render('IV', False, BLACK)
+speed_dict[5] = SPEED_FONT.render('V', False, BLACK)
+speed_dict[6] = SPEED_FONT.render('VI', False, BLACK)
+speed_dict[7] = SPEED_FONT.render('VII', False, BLACK)
+speed_dict[8] = SPEED_FONT.render('VIII', False, BLACK)
+speed_dict[9] = SPEED_FONT.render('IX', False, BLACK)
+speed_dict[10] = SPEED_FONT.render('X', False, BLACK)
+
+def get_power_image(power:int):
+    if power not in power_dict:
+        power_dict[power] = POWER_FONT.render(str(power), False, BLACK)
+    return power_dict[power]
+
+def get_speed_image(speed:int):
+    if speed not in speed_dict:
+        speed_dict[speed] = SPEED_FONT.render(str(speed), False, BLACK)
+    return speed_dict[speed]
+
+# Zone Definition
 ZONE_MARGIN = 2
 ZONE_SIZE = [CARD_SIZE[0] + 2*ZONE_MARGIN, CARD_SIZE[1] + 2*ZONE_MARGIN]
 SUBZONE_MARGIN = 30
 
-def card_on_zone(zone_pos:list):
+def card_on_zone(zone_pos):
     return [zone_pos[0] + ZONE_MARGIN, zone_pos[1] + ZONE_MARGIN]
 
+# Game Components RectValues & Images
 board_rv = [BOARD_MARGIN, ROW2, HALFBOARD_WIDTH, HALFBOARD_HEIGHT*2]
 board_img = pg.Surface((HALFBOARD_WIDTH, HALFBOARD_HEIGHT*2))
 board_img.fill(WHITE)
@@ -63,7 +98,6 @@ half2_rv = [BOARD_MARGIN, ROW2, HALFBOARD_WIDTH, HALFBOARD_HEIGHT]
 halfboard_template = pg.Surface((HALFBOARD_WIDTH, HALFBOARD_HEIGHT))
 halfboard_template.fill(BOARD_BG)
 pg.draw.rect(halfboard_template, BLACK, halfboard_template.get_rect(), LINE_WIDTH)
-
 halfboard1 = halfboard_template.copy()
 halfboard2 = halfboard_template.copy()
 
@@ -72,7 +106,6 @@ deck2_rv = [BOARD_MARGIN, ROW2, ZONE_SIZE[0], ZONE_SIZE[1]]
 deck_template = pg.Surface((ZONE_SIZE[0], ZONE_SIZE[1]))
 deck_template.fill(WHITE)
 pg.draw.rect(deck_template, BLACK, deck_template.get_rect(), LINE_WIDTH)
-
 deck1 = deck_template.copy()
 deck2 = deck_template.copy()
 
@@ -81,7 +114,6 @@ gy2_rv = [BOARD_MARGIN, ROW3, ZONE_SIZE[0], ZONE_SIZE[1]]
 gy_template = pg.Surface((ZONE_SIZE[0], ZONE_SIZE[1]))
 gy_template.fill(GY_BG)
 pg.draw.rect(gy_template, BLACK, gy_template.get_rect(), LINE_WIDTH)
-
 gy1 = gy_template.copy()
 gy2 = gy_template.copy()
 
@@ -90,10 +122,8 @@ mz2_rv = [BOARD_MARGIN + HALFBOARD_WIDTH/2 - ZONE_SIZE[0]/2, ROW3, ZONE_SIZE[0],
 mz_template = pg.Surface((ZONE_SIZE[0], ZONE_SIZE[1]))
 mz_template.fill(WHITE)
 pg.draw.rect(mz_template, BLACK, mz_template.get_rect(), LINE_WIDTH)
-
 mz1 = mz_template.copy()
 mz2 = mz_template.copy()
-
 
 sz1_pos = [BOARD_MARGIN + HALFBOARD_WIDTH//2, ROW5]
 sz2_pos = [BOARD_MARGIN + HALFBOARD_WIDTH//2, ROW2]
@@ -108,13 +138,16 @@ for x in range(HALFBOARD_WIDTH - 2*ZONE_SIZE[0]):
     d = abs(x - (HALFBOARD_WIDTH - 2*ZONE_SIZE[0])/2)
     transparancy = 1 - d/(HALFBOARD_WIDTH - 2*ZONE_SIZE[0])*2
     pg.draw.line(row1, (200, 200, 250, int(255*transparancy)), (x, 0), (x, ROW_HEIGHT - LINE_WIDTH))
-
 row2 = row1.copy()
 
 hand_img = pg.Surface((10, 10))
 hand_img.fill(WHITE)
 hand1_center = [BOARD_MARGIN + HALFBOARD_WIDTH//2 - ZONE_SIZE[0]//2, ROW6]
 hand2_center = [BOARD_MARGIN + HALFBOARD_WIDTH//2 - ZONE_SIZE[0]//2, ROW1]
+
+# Explanation
+TITLE_FONT = pg.font.SysFont('Gulim', 40)
+EXP_FONT = pg.font.SysFont('Gulim', 15)
 
 title_pos = (WIDTH - RIGHT_MARGINE + 20, 30)
 exp_pos = (title_pos[0] + 200, 100)
@@ -134,13 +167,16 @@ end_button.blit(end_button_label,
 
 
 # real images on the board. May be different from real data.
-gamecomponents: dict[TCG.GameComponent|Literal['temp zone', 'endbutton'], pg.Rect] = {}
+gamecomponents: dict[TCG.GameComponent|TCG.Choice|Literal['temp zone', 'endbutton'], pg.Rect] = {}
 
 player1 = TCGplayer.player1
 player2 = TCGplayer.player2
 board = TCG.Board(player1, player2)
 
 card_image_dict: dict[type[TCG.Card], pg.Surface] = {}
+choice_image_dict: dict[str, pg.Surface] = {}
+choice_image_dict['default'] = pg.image.load('./images/choice_default.png').convert_alpha()
+choice_image_dict['attack'] = pg.image.load('./images/choice_attack.png').convert_alpha()
 
 hovering = []
 clicking = []
@@ -149,6 +185,7 @@ making_subzone = 0
 
 def get_card_image(card:TCG.Card):
     if card.on_face:
+        # Use premade image for background
         if type(card) in card_image_dict:
             real_image = card_image_dict[type(card)]
         else:
@@ -162,16 +199,36 @@ def get_card_image(card:TCG.Card):
                 real_image_background = card_front_image.copy()
             
             if card.image:
-                card_image = pg.image.load(card.image).convert()
-                real_image_background.blit(card_image, dest=(2, 15))
+                real_image_background.blit(pg.image.load(card.image), dest=(2, 15))
+            if card.name:
+                real_image_background.blit(NAME_FONT.render(card.name, False, BLACK), NAME_COORD)
 
-            card_image_dict[type(card)] = real_image_background
+            card_image_dict[type(card)] = real_image_background.convert()
             real_image = real_image_background
+        # Draw variable values on each frame
+        if card.power:
+            real_image.blit(get_power_image(card.power), POWER_COORD)
+        if card.speed:
+            real_image.blit(get_speed_image(card.speed), SPEED_COORD)
+        
         return real_image
     else:
         return card_back_image
 
-def get_key_priority(keys:list[str]):
+def get_choice_image(choice:TCG.Choice):
+    if choice.image:
+        if choice_image_dict[choice.image]:
+            pass
+        else:
+            try:
+                choice_image_dict[choice.image] = pg.image.load(choice.image)
+            except FileNotFoundError:
+                choice_image_dict[choice.image] = choice_image_dict['default']
+        return choice_image_dict[choice.image]
+    else:
+        return choice_image_dict['default']
+
+def get_hovering_priority(hovering:list[TCG.GameComponent|TCG.Choice|str]) -> TCG.GameComponent|TCG.Choice|str|None:
     priority_order = [
         TCG.MainZone,
         TCG.Graveyard,
@@ -180,14 +237,19 @@ def get_key_priority(keys:list[str]):
         TCG.HalfBoard,
         TCG.Board
     ]
-    if 'temp zone' in keys:
-        return 'temp zone', 'comp'
+    if 'temp zone' in hovering:
+        return 'temp zone'
+    elif 'endbutton' in hovering:
+        return 'endbutton'
     else:
+        cards = [key for key in hovering if isinstance(key, TCG.Card) and key != board.holding and key.on_face]
+        if cards:
+            return cards.pop()
         for type in priority_order:
-            for key in keys:
+            for key in hovering:
                 if isinstance(key, type):
-                    return key, 'comp'
-    return None, 'None'
+                    return key
+    return None
 
 def screen_generator():
     def board_generator():
@@ -222,7 +284,25 @@ def screen_generator():
                     subzone_index = subzone_num - bool(-1 < making_subzone - 1 < subzone_num)
                     gamecomponents[player1.row.subzones[subzone_index]] = SURF.blit(sz_template, pos)
 
-    def card_generator():
+    def pack_generator():
+        def card_generator(card, rv:list[int]|tuple[int, int], reversed:bool, i:int, margin:int=4):
+            card_surface = get_card_image(card)
+            dir = -1 if reversed else 1
+            if reversed:
+                card_surface = pg.transform.flip(card_surface, True, True)
+            gamecomponents[card] = SURF.blit(card_surface,
+                                             (card_on_zone(rv)[0], card_on_zone(rv)[1] + dir*margin*i))
+            return gamecomponents[card]
+        
+        def choice_generator(card:TCG.Card):
+            if choices := [choice for choice in board.current_player.available_choices
+                           if choice.effect.bind_to == card and choice.is_button]:
+                choice_rv = (gamecomponents[card].left + 2, gamecomponents[card].top + 85)
+                margin = 85//(len(choices) + 1)
+                for i, choice in enumerate(choices):
+                    gamecomponents[choice] = SURF.blit(get_choice_image(choice),
+                                                       (choice_rv[0] + (i+1)*margin - 12, choice_rv[1]))
+
         cards_shown_dict: dict[TCG.GameComponent, list[TCG.Card]] = {}
         for key in gamecomponents:
             # Ignore cardlist generation on temp zone
@@ -235,39 +315,31 @@ def screen_generator():
         # ROW2
         for subzone in [key for key in gamecomponents if isinstance(key, TCG.SubZone) and key.halfboard == player2]:
             for i, card in enumerate(cards_shown_dict[subzone]):
-                gamecomponents[card] = SURF.blit(pg.transform.flip(get_card_image(card), True, True),
-                                                 ((gamecomponents[subzone].x + ZONE_MARGIN,
-                                                  gamecomponents[subzone].y + ZONE_MARGIN - CARD_NAME_HEIGHT*i))
-                                                 )
+                card_generator(card, gamecomponents[subzone].topleft, True, i, CARD_NAME_HEIGHT)
+            choice_generator(card)
+
         for i, card in enumerate(cards_shown_dict[player2.deck]):
-            gamecomponents[card] = SURF.blit(pg.transform.flip(get_card_image(card), True, True),
-                                             (card_on_zone(deck2_rv)[0], card_on_zone(deck2_rv)[1] - 4*i))
+            card_generator(card, gamecomponents[player2.deck].topleft, True, i)
         # ROW3
         for i, card in enumerate(cards_shown_dict[player2.graveyard]):
-            gamecomponents[card] = SURF.blit(pg.transform.flip(get_card_image(card), True, True),
-                                             (card_on_zone(gy2_rv)[0], card_on_zone(gy2_rv)[1] - 4*i))
+            card_generator(card, gamecomponents[player2.graveyard].topleft, True, i)
         for i, card in enumerate(cards_shown_dict[player2.main_zone]):
-            gamecomponents[card] = SURF.blit(pg.transform.flip(get_card_image(card), True, True),
-                                             (card_on_zone(mz2_rv)[0],
-                                              card_on_zone(mz2_rv)[1] - CARD_NAME_HEIGHT*i)
-                                              )
+            card_generator(card, gamecomponents[player2.main_zone].topleft, True, i, CARD_NAME_HEIGHT)
+        choice_generator(card)
         # ROW5
         for subzone in [key for key in gamecomponents if isinstance(key, TCG.SubZone) and key.halfboard == player1]:
             for i, card in enumerate(cards_shown_dict[subzone]):
-                gamecomponents[card] = SURF.blit(get_card_image(card),
-                                                 (gamecomponents[subzone].x + ZONE_MARGIN,
-                                                  gamecomponents[subzone].y + ZONE_MARGIN + CARD_NAME_HEIGHT*i)
-                                                 )
+                card_generator(card, gamecomponents[subzone].topleft, False, i, CARD_NAME_HEIGHT)
+            choice_generator(card)
         for i, card in enumerate(cards_shown_dict[player1.deck]):
-            gamecomponents[card] = SURF.blit(get_card_image(card), (card_on_zone(deck1_rv)[0], card_on_zone(deck1_rv)[1] + 4*i))
+            card_generator(card, gamecomponents[player1.deck].topleft, False, i)
         # ROW4
         for i, card in enumerate(cards_shown_dict[player1.main_zone]):
-            gamecomponents[card] = SURF.blit(get_card_image(card),
-                                             (card_on_zone(mz1_rv)[0],
-                                              card_on_zone(mz1_rv)[1] + CARD_NAME_HEIGHT*i)
-                                              )
+            card_generator(card, gamecomponents[player1.main_zone].topleft, False, i, CARD_NAME_HEIGHT)
+        choice_generator(card)
+
         for i, card in enumerate(cards_shown_dict[player1.graveyard]):
-            gamecomponents[card] = SURF.blit(get_card_image(card), (card_on_zone(gy1_rv)[0], card_on_zone(gy1_rv)[1] + 4*i))
+            card_generator(card, gamecomponents[player1.graveyard].topleft, False, i)
         # HAND
         for i, card in enumerate(cards_shown_dict[player1.hand]):
             gamecomponents[card] = SURF.blit(get_card_image(card),
@@ -287,60 +359,55 @@ def screen_generator():
     def explanation_generator():
         explanation = ['', '', None]
 
-        def get_card_explanation(cardcomponent):
-            title = 'Sample Card'
-            explanation = 'A dummy card for test.'
-            img = card_back_image
-            return [title, explanation, img]
+        def get_card_explanation(card:TCG.Card):
+            title = card.name if card.name else 'Sample Card'
+            discription = card.discription if card.discription else 'A dummy card for test.'
+            img = get_card_image(card)
+            return [title, discription, img]
 
-        def get_gamecomponent_explanation(key):
+        def get_gamecomponent_explanation(key:TCG.GameComponent|TCG.Choice|str):
             title = None
-            explanation = None
+            discription = None
             img = None
             if key == None:
                 pass
             elif isinstance(key, TCG.Board):
                 title = 'Board'
-                explanation = 'Where game is played.'
+                discription = 'Where game is played.'
             elif key == player1:
                 title = 'Your Halfboard'
-                explanation = 'Your side of the board.'
+                discription = 'Your side of the board.'
             elif key == player2:
                 title = "Opponent's Halfboard"
-                explanation = "The opponent's side of the board"
+                discription = "The opponent's side of the board"
             elif key == player1.deck:
                 title = 'Your Deck'
-                explanation = 'Your Deck.'
+                discription = 'Your Deck.'
             elif key == player1.row:
                 title = 'Your Row'
-                explanation = 'Place here to make a new Sub Zone.'
+                discription = 'Place here to make a new Sub Zone.'
             elif key == player1.main_zone:
                 title = 'Main Zone'
-                explanation = 'Place here to end turn.'
+                discription = 'Place here to end turn.'
             elif key == player1.graveyard:
                 title = 'Your Graveyard'
-                explanation = 'Used cards are here.'
+                discription = 'Used cards are here.'
             elif isinstance(key, TCG.SubZone):
                 title = f'Your Sub Zone {key.name}'
-                explanation = 'Your Sub Zone.'
+                discription = 'Your Sub Zone.'
             elif key == 'temp zone':
-                title = f'New Sub Zone'
-                explanation = 'Place card here to create new Sub Zone.'
-            return [title, explanation, img]
+                title = 'New Sub Zone'
+                discription = 'Place card here to create new Sub Zone.'
+            elif key == 'endbutton':
+                title = 'End Button'
+                discription = "For Debug. Only active when opponent's turn."
+            return [title, discription, img]
 
-        if board.holding:
-            # On nowhere -> Show card itself
-            if len(hovering) == 1:
-                explanation = get_card_explanation(hovering[0]) \
-                              if isinstance(hovering[0], TCG.Card) \
-                              else get_gamecomponent_explanation(hovering[0])
-            # On place -> Show place information
-            else:
-                key, str = get_key_priority(hovering[:-1])
-                explanation = get_card_explanation(key) if str == 'card' else get_gamecomponent_explanation(key)
-        elif hovering != []:
-            key, str = get_key_priority(hovering)
-            explanation = get_card_explanation(key) if str == 'card' else get_gamecomponent_explanation(key)
+        key = get_hovering_priority(hovering)
+        if key:
+            explanation = get_card_explanation(key) \
+                          if isinstance(key, TCG.Card) \
+                          else get_gamecomponent_explanation(key)
         else:
             explanation = ['No hovering', '', None]
 
@@ -357,31 +424,28 @@ def screen_generator():
 
     board_generator()
     subzone_generator()
-    card_generator()
+    pack_generator()
     explanation_generator()
 
 # Start
 gameplay = board.play()
 next(gameplay)
+refresh = True
 
 def calculate(message:tuple[Literal['click', 'drop'], list, int|None]):
-    re = gameplay.send(message)
-    if type(re) == str:
-        REFRESH = False
-        raise Exception(f'Exception {re} occured.')
-    #else:
-        #next(gameplay)
-    return re
+    return gameplay.send(message)
 
 screen_generator()
 
-REFRESH = True
-while REFRESH:
+class EndException(Exception):
+    pass
+
+while refresh:
     frame_clicking = []
     unclicking = []
     for event in pg.event.get():
         if event.type == pg.QUIT:
-            REFRESH = False
+            refresh = False
             continue
 
         if event.type == pg.MOUSEMOTION:
@@ -433,15 +497,34 @@ while REFRESH:
                     #print(f'you unclicked {key}.')
                     keys.append(key)
             if board.holding:
-                ans = calculate(('drop', keys, making_subzone))
-                if ans == False:
-                    raise Exception('Something went Wrong')
-                elif isinstance(ans, str):
-                    raise Exception(ans)
+                try:
+                    ans = calculate(('drop', keys, making_subzone))
+                    if ans == False:
+                        raise Exception('Something went Wrong')
+                    elif isinstance(ans, str):
+                        if ans == 'end!':
+                            raise EndException()
+                        else:
+                            raise Exception(ans)
+                except EndException:
+                    refresh = False
             making_subzone = 0
 
     screen_generator()
     pg.display.update()
+
+SURF.fill(WHITE)
+winner = board.opponent(board.loser).name if isinstance(board.loser, TCG.HalfBoard) else None
+gameover_message = TITLE_FONT.render(f'{winner} Survives!', True, BLACK)
+SURF.blit(gameover_message, (SURF.get_width()//2 - gameover_message.get_width()//2,
+                             SURF.get_height()//2 - gameover_message.get_height()//2))
+pg.display.update()
+
+watching = True
+while watching:
+    for event in pg.event.get():
+        if event.type in [pg.QUIT, pg.MOUSEBUTTONDOWN, pg.MOUSEBUTTONUP]:
+            watching = False
 
 pg.quit()
 sys.exit()
