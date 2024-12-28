@@ -31,7 +31,7 @@ class GameComponent:
     # For Packs only
     def clicked(self):
         '''Checks if clicked and droped on same place'''
-        if self.halfboard.board.holding_from == self:
+        if self.halfboard.board.holding == self:
             return True
         else:
             return False
@@ -53,6 +53,7 @@ class Card(GameComponent):
                 self._effects.append(effect)
         
         self.on_face = False
+        self._active: Literal['active', 'inactive']|None = None
         self._location: Pack|None = None
 
     @property
@@ -102,9 +103,21 @@ class Card(GameComponent):
                 self.location.remove(self)
         if new_location:
             self._location = new_location
+            if not isinstance(self.location, Zone):
+                self._active = None
         else:
             print(f'{self} moved to {new_location}. Delete self.')
             del self
+
+    @property
+    def active(self):
+        if isinstance(self.location, Zone):
+            if not self._active:
+                self._active = 'active'
+            return self._active
+        else:
+            self._active = None
+            return self._active
 
     def on_top(self):
         if isinstance(self.location, Zone) or isinstance(self.location, Deck):
@@ -209,10 +222,22 @@ class Effect:
         return False
 
 class EffChain:
-    def __init__(self, effectblock:'EffectBlock', true:int|None=None, false:int|None=None):
+    def __init__(self, effectblock:'EffectBlock', *index:int|None):
         self.effectblock = effectblock
-        self.true = true
-        self.false = false
+        if len(index) > 2:
+            self._index = index
+        elif len(index) > 0:
+            self.true = index[0]
+            self.false = index[1] if len(index) == 2 else None
+        else:
+            self.true = self.false = None
+
+    def integer(self, integer:int) -> int|None:
+        if self._index:
+            return self._index[integer]
+        else:
+            raise Exception('Tryed to access numbered index in boolean EffChain!')
+            return None
 
 class EffectBlock:
     def __init__(self, effect:Effect):
@@ -262,6 +287,22 @@ class Condition(EffectBlock):
             print(f'Effect is not valid! Condition {self} ignored.')
             return False
 
+class _GetCardActiveCondition(Condition):
+    '''{0: inactive, 1: active, 2: None}'''
+    def __init__(self, effect: Effect):
+        super().__init__(effect)
+        self.card: Card|None = None
+
+    def check(self, in_action: 'Action | bool') -> bool | int:
+        if super().check(in_action) and self.card:
+            if self.card.active == None:
+                return 2
+            elif self.card.active == 'active':
+                return 1
+            elif self.card.active == 'inactive':
+                return 0
+        return False
+
 class Restriction(EffectBlock):
     def verify(self, eb:'EffectBlock') -> bool:
         return True
@@ -297,6 +338,9 @@ class Choice(EffectBlock):
 
     def match(self, key:'GameComponent|str|Choice|None', index:int|None) -> bool:
         return True if self.key == key else False
+    
+    def clicked(self):
+        return True if self.effect.board.holding == self else False
 
 class Action(EffectBlock):
     def process(self) -> bool|str:
@@ -335,6 +379,7 @@ class Let(Move):
 
     def process(self):
         super().process()
+        self.card._active = 'inactive'
         self.effect.board.drop_holding()
         self.destination.has_been_let = True
         return True
@@ -460,7 +505,9 @@ class Deck(Pack):
 
         def process(self):
             for _ in range(self.num):
-                self.deck.halfboard.hand.append(self.deck.pop())
+                card = self.deck.pop()
+                card._active = None
+                self.deck.halfboard.hand.append(card)
             return True
         
     # _DrawAction 상속을 위해 밖으로 뺌뺌
@@ -479,8 +526,7 @@ class Deck(Pack):
             
         class _TurnDrawChoice(Choice):
             def match(self, key:GameComponent, index:int|None):
-                if self.effect.bind_to.clicked():
-                    return super().match(key, index)
+                return super().match(key, index) and self.effect.bind_to.clicked()
                 
         class _TurnDrawActionGen(ActionGen):
             effect: 'Deck._TurnDrawEffect'
@@ -618,6 +664,7 @@ class MainZone(Zone):
             self.effectblocks = [
                 EffChain(self._MainZoneLetCondition(self), 1, None),
                 EffChain(bind_to.DragIntoPackChoice(self), 2, None),
+                EffChain(_GetCardActiveCondition(self), None, 3, 3),
                 EffChain(self._MainZoneLetActionGen(self), None, None)
             ]
 
@@ -797,6 +844,7 @@ class Row(GameComponent):
             self.effectblocks = [
                 EffChain(self._DeployRowCondition(self), 1, None),
                 EffChain(self._TempZoneChoice(self), 2, None),
+                EffChain(_GetCardActiveCondition(self), None, 3, 3),
                 EffChain(self._DeployGen(self), None, None)
             ]
 
@@ -1078,17 +1126,28 @@ class Board(GameComponent):
             eb = effectchain.effectblock
             # Check each EffectBlock with current restrictions.
             if not self.verify_restriction(eb):
+                if choice:
+                    print('Your choice could not pass restriction.')
                 return False
             if param:
                 eb.add_parameter(param)
             # Conditions
             if isinstance(eb, Condition):
-                if not eb.check(in_action):
+                result = eb.check(in_action)
+                if type(result) == int:
+                    inte = effectchain.integer(result)
+                    if type(inte) == int:
+                        effectchain = effect.effectblocks[inte]
+                    else:
+                        if choice:
+                            print(f'Your choice could not pass condition {eb}.')
+                        return False
+                elif result == False:
                     if effectchain.false:
                         effectchain = effect.effectblocks[effectchain.false]
                     else:
                         return False
-                elif effectchain.true:
+                elif result == True and effectchain.true:
                     effectchain = effect.effectblocks[effectchain.true]
                 else:
                     raise Exception('No instruction after Condition!')
@@ -1162,16 +1221,19 @@ class Board(GameComponent):
                 # Init
                 self.turn += 1
                 self.current_player = self.player1 if self.turn%2 else self.player2
-                for player in self.players:
-                    for zone in player.zones:
-                        zone.has_been_let = False
                 print('start turn')
-
                 self.action_stack = []
                 self.current_player.available_choices = []
                 self.opponent().available_choices = []
-                # Init Draw
-                # 미구현
+
+                # Init
+                for player in self.players:
+                    for zone in player.zones:
+                        zone.has_been_let = False
+                        if player == self.current_player:
+                            for card in zone._cards:
+                                card._active = None
+                    player.deck.turndrawed = False
 
                 # Main Phase
                 self.turn_end = False

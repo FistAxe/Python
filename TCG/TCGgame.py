@@ -45,18 +45,23 @@ CARD_SIZE = [90, 120]
 CARD_NAME_HEIGHT = 12
 card_back_image = pg.image.load('./images/card_back.png').convert()
 card_front_image = pg.image.load('./images/card_front.png').convert()
+card_front_active = pg.image.load('./images/card_front_active.png').convert()
 card_front_R = pg.image.load('./images/card_front_R.png').convert()
+card_front_R_active = pg.image.load('./images/card_front_R_active.png').convert()
 card_front_Y = pg.image.load('./images/card_front_Y.png').convert()
+card_front_Y_active = pg.image.load('./images/card_front_Y_active.png').convert()
 card_front_B = pg.image.load('./images/card_front_B.png').convert()
+card_front_B_active = pg.image.load('./images/card_front_B_active.png').convert()
 
 
 # Card Fonts
 NAME_FONT = pg.font.SysFont('Gulim', 11)
 POWER_FONT = pg.font.SysFont('Segoe UI Black', 16, italic=True)
 SPEED_FONT = pg.font.SysFont('Verdana', 13, bold=True)
-NAME_COORD = (3, 2)
-POWER_COORD = (5, 98)
-SPEED_COORD = (5, 70)
+NAME_COORD = (14, 1)
+IMAGE_COORD = (2, 13)
+POWER_COORD = (4, 98)
+SPEED_COORD = (4, 70)
 power_dict: dict[int, pg.Surface] = {}
 speed_dict: dict[int, pg.Surface] = {}
 speed_dict[1] = SPEED_FONT.render('I', False, BLACK)
@@ -174,6 +179,7 @@ player2 = TCGplayer.player2
 board = TCG.Board(player1, player2)
 
 card_image_dict: dict[type[TCG.Card], pg.Surface] = {}
+card_image_active_dict: dict[type[TCG.Card], pg.Surface] = {}
 choice_image_dict: dict[str, pg.Surface] = {}
 choice_image_dict['default'] = pg.image.load('./images/choice_default.png').convert_alpha()
 choice_image_dict['attack'] = pg.image.load('./images/choice_attack.png').convert_alpha()
@@ -186,25 +192,38 @@ making_subzone = 0
 def get_card_image(card:TCG.Card):
     if card.on_face:
         # Use premade image for background
-        if type(card) in card_image_dict:
-            real_image = card_image_dict[type(card)]
-        else:
+        if type(card) not in card_image_dict:
+            # Make one.
             if card.color == 'R':
-                real_image_background = card_front_R.copy()
+                real_image_bg = card_front_R.copy()
+                real_image_bg_active = card_front_R_active.copy()
             elif card.color == 'Y':
-                real_image_background = card_front_Y.copy()
+                real_image_bg = card_front_Y.copy()
+                real_image_bg_active = card_front_Y_active.copy()
             elif card.color == 'B':
-                real_image_background = card_front_B.copy()
+                real_image_bg = card_front_B.copy()
+                real_image_bg_active = card_front_B_active.copy()
             else:
-                real_image_background = card_front_image.copy()
+                real_image_bg = card_front_image.copy()
+                real_image_bg_active = card_front_active.copy()
             
             if card.image:
-                real_image_background.blit(pg.image.load(card.image), dest=(2, 15))
+                img = pg.image.load(card.image).convert()
+                real_image_bg.blit(img, IMAGE_COORD)
+                real_image_bg_active.blit(img, IMAGE_COORD)
             if card.name:
-                real_image_background.blit(NAME_FONT.render(card.name, False, BLACK), NAME_COORD)
+                name = NAME_FONT.render(card.name, False, BLACK)
+                real_image_bg.blit(name, NAME_COORD)
+                real_image_bg_active.blit(name, NAME_COORD)
 
-            card_image_dict[type(card)] = real_image_background.convert()
-            real_image = real_image_background
+            card_image_dict[type(card)] = real_image_bg.convert()
+            card_image_active_dict[type(card)] = real_image_bg_active.convert()
+
+        if card.active == 'active':
+            real_image = card_image_active_dict[type(card)]
+        else:
+            real_image = card_image_dict[type(card)]
+
         # Draw variable values on each frame
         if card.power:
             real_image.blit(get_power_image(card.power), POWER_COORD)
@@ -297,7 +316,7 @@ def screen_generator():
         def choice_generator(card:TCG.Card):
             if choices := [choice for choice in board.current_player.available_choices
                            if choice.effect.bind_to == card and choice.is_button]:
-                choice_rv = (gamecomponents[card].left + 2, gamecomponents[card].top + 85)
+                choice_rv = (gamecomponents[card].left + 2, gamecomponents[card].top + 80)
                 margin = 85//(len(choices) + 1)
                 for i, choice in enumerate(choices):
                     gamecomponents[choice] = SURF.blit(get_choice_image(choice),

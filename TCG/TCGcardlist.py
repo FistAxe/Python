@@ -35,13 +35,16 @@ class CursedDefeatButton(TCG.Artifact):
     class ButtonPressedEffect(TCG.Effect):
         bind_to: 'CursedDefeatButton'
         class ButtonPressedCondition(TCG.Condition):
+            effect: 'CursedDefeatButton.ButtonPressedEffect'
             def check(self, in_action):
                 return super().check(in_action) and \
+                       self.effect.bind_to.active == 'active' and \
                        not in_action and \
                        self.effect.bind_to.is_for_current_player() and \
                        not self.effect.is_reserved()
         class ButtonPressChoice(TCG.Choice):
-            pass
+            def match(self, key: TCG.GameComponent | str | TCG.Choice | None, index: int | None) -> bool:
+                return super().match(key, index) and self.clicked()
         def __init__(self, bind_to: 'CursedDefeatButton'):
             super().__init__(bind_to)
             self.effectblocks = [
