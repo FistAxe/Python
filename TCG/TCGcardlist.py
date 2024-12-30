@@ -48,9 +48,9 @@ class CursedDefeatButton(TCG.Artifact):
         def __init__(self, bind_to: 'CursedDefeatButton'):
             super().__init__(bind_to)
             self.effectblocks = [
-                TCG.EffChain(self.ButtonPressedCondition(self), 1),
-                TCG.EffChain(self.ButtonPressChoice(self, has_button=True, image='default'), 2),
-                TCG.EffChain(self.bind_to.owner.get_loseaction(self))
+                self.ButtonPressedCondition(self, 1),
+                self.ButtonPressChoice(self, 2, has_button=True, image='default'),
+                self.bind_to.owner.get_loseaction(self)
             ]
     def __init__(self, owner: TCG.HalfBoard):
         super().__init__(
