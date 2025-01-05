@@ -34,24 +34,17 @@ class Goblet(TCG.Artifact):
 class CursedDefeatButton(TCG.Artifact):
     class ButtonPressedEffect(TCG.Effect):
         bind_to: 'CursedDefeatButton'
-        class ButtonPressedCondition(TCG.Condition):
-            effect: 'CursedDefeatButton.ButtonPressedEffect'
-            def check(self, in_action):
-                return super().check(in_action) and \
-                       self.effect.bind_to.active == 'active' and \
-                       not in_action and \
-                       self.effect.bind_to.is_for_current_player() and \
-                       not self.effect.is_reserved()
-        class ButtonPressChoice(TCG.Choice):
+
+        class ButtonPressChoice(TCG.ButtonChoice):
             def match(self, key: TCG.GameComponent | str | TCG.Choice | None, index: int | None) -> bool:
                 return super().match(key, index) and self.clicked()
-        def __init__(self, bind_to: 'CursedDefeatButton'):
-            super().__init__(bind_to)
-            self.effectblocks = [
-                self.ButtonPressedCondition(self, 1),
-                self.ButtonPressChoice(self, 2, has_button=True, image='default'),
-                self.bind_to.owner.get_loseaction(self)
-            ]
+
+        def execute(self, in_event: TCG.Choice | TCG.Action | None):
+            if self.chosen(in_event):
+                return self.give_action(self.bind_to.owner.get_loseaction(self))
+            elif self.bind_to.active == 'active' and not in_event and self.bind_to.is_for_current_player():
+                self.choice = self.ButtonPressChoice(self)
+    
     def __init__(self, owner: TCG.HalfBoard):
         super().__init__(
             owner,
