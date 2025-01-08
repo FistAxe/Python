@@ -39,12 +39,12 @@ class CursedDefeatButton(TCG.Artifact):
             def match(self, key: TCG.GameComponent | str | TCG.Choice | None, index: int | None) -> bool:
                 return super().match(key, index) and self.clicked()
 
-        def execute(self, in_event: TCG.Choice | TCG.Action | None):
+        def _execute(self, in_event: TCG.Choice | TCG.Action | None):
             if self.chosen(in_event):
-                return self.give_action(self.bind_to.owner.get_loseaction(self))
+                return self.bind_to.owner.get_loseaction(self)
             elif self.bind_to.active == 'active' and not in_event and self.bind_to.is_for_current_player():
-                self.choice = self.ButtonPressChoice(self)
-    
+                return self.ButtonPressChoice(self)
+
     def __init__(self, owner: TCG.HalfBoard):
         super().__init__(
             owner,
