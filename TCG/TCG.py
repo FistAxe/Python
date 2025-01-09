@@ -44,6 +44,189 @@ class GameComponent:
         else:
             return False
 
+class Effect():
+    '''bind_to, effectblocks, board, is_valid'''
+    _name='Effect'
+
+    def __init__(self, bind_to:GameComponent, name:str|None=None):
+        self.bind_to = bind_to
+        if name:
+            self.name = name
+        self.choice: Choice|None = None
+
+    def __repr__(self):
+        return f"<{self.name} at {hex(id(self))}>"
+
+    @property
+    def board(self):
+        if self.bind_to:
+            return self.bind_to.board
+        else:
+            raise AttributeError("Tried to load Board from free Effect!")
+    
+    @property
+    def name(self):
+        return f"{self.bind_to.name}'s {self._name}"
+    
+    @name.setter
+    def name(self, name:str):
+        self._name = name
+
+    def is_valid(self):
+        '''카드: 드러남 SubZone: 존재함 이외: 항상'''
+        if self.bind_to:
+            if isinstance(self.bind_to, Card):
+                if self.bind_to.reveal_type():
+                    return True
+            elif isinstance(self.bind_to, SubZone):
+                try:
+                    return bool(self.bind_to.row)
+                except Exception:
+                    pass
+            else:
+                return True
+            self.current_eb = None
+            return False
+        else:
+            print(f'Effect {self} has no bind_to! Delete.')
+            del self
+            return False
+
+    def valid_property(self, var:T) -> T|None:
+        return var if self.is_valid() else None
+
+    def execute(self, in_event: 'Choice|Action|None') -> 'Choice|Action|None':
+        event = self._execute(in_event)
+        if isinstance(event, Choice):
+            self.choice = event
+        else:
+            self.choice = None
+        return event
+    
+    def _execute(self, in_event: 'Choice|Action|None') -> 'Choice|Action|None':
+        '''
+        if self.chosen(in_event):
+            event = Action
+        elif Condition:
+            event = Choice
+        return self.give_event(event)
+        '''
+        raise NotImplementedError
+
+    def chosen(self, in_event:'Event|None') -> bool:
+        return bool(self.choice and self.choice == in_event)
+    
+'''EffectBlocks'''
+class Condition:
+    def __init__(self, func):
+        self.func = func
+
+    def __call__(self, *args, **kwargs):
+        return self.func(*args, **kwargs)
+
+class Event:
+    name: str = 'Dummy Event'
+    def __init__(self, effect:Effect|None, name:str|None=None, identifier:int|None=None) -> None:
+        self.effect = effect
+        if name:
+            self.name = name
+        if identifier is not None:
+            self.identifier = identifier
+
+    def __repr__(self):
+        return f"<{self.name} {'by ' + self.effect.name if self.effect else ''} at {hex(id(self))}>"
+
+    def is_valid(self):
+        if self.effect:
+            return self.effect.is_valid()
+        else:
+            return True
+
+class GiveCardEvent(Event):
+    card:'Card'
+
+class GivePlaceEvent(Event):
+    place:'Pack'
+
+class Restriction(Event):
+    def verify(self, event:Event) -> bool:
+        return True
+
+class Choice(Event):
+    effect: Effect
+    image: str|None = None
+    is_button: bool = False
+    name = 'Dummy Choice'
+    def __init__(self, effect: Effect, key:list[GameComponent]|GameComponent|Literal['temp zone']|'Choice'|None=None,
+                 chooser:Literal['self', 'opponent']='self', name:str|None=None, identifier:int|None=None):
+        super().__init__(effect, name, identifier)
+        self.chooser = self.effect.bind_to.halfboard if chooser == 'self' else self.effect.board.opponent(self.effect.bind_to.halfboard)
+
+        if key:
+            self._key = key
+        else:
+            self._key = self.effect.bind_to
+
+    @property
+    def key(self):
+        if self.effect.is_valid():
+            return self._key
+        else:
+            return None
+
+    def match(self, key:'GameComponent|str|Choice|None', index:int|None) -> bool:
+        '''key와 self.key 비교'''
+        if self.key == key:
+            return True
+        else:
+            return False
+
+    def clicked(self):
+        return True if self.effect.board.holding == self else False
+    
+class ButtonChoice(Choice):
+    def __init__(self, effect: Effect, image:str|None=None, chooser:Literal['self', 'opponent']='self', name:str|None=None, identifier:int|None=None):
+        super().__init__(effect, key=self, chooser=chooser, name=name, identifier=identifier)
+        self.is_button = True
+        self.image = image
+
+class SelectCardChoice(Choice, GiveCardEvent):
+    def __init__(self, effect:Effect, key:list['Card'], image:str|None=None, chooser:Literal['self', 'opponent']='self', name:str|None=None, identifier:int|None=None):
+        super().__init__(effect, None, chooser, name, identifier)
+        self.image = image
+        self._key = key
+
+class SelectPlaceChoice(Choice, GivePlaceEvent):
+    def __init__(self, effect:Effect, key:list['Pack'], image:str|None=None, chooser: Literal['self', 'opponent']='self', name:str|None=None, identifier:int|None=None):
+        super().__init__(effect, None, chooser, name, identifier)
+        self.image = image
+        self._key = key
+
+class Action(Event):
+    _state: Literal['pending', 'processing']|None = None
+
+    def __init__(self, effect: Effect | None, name:str, identifier:int|None=None, **kwargs) -> None:
+        super().__init__(effect, name, identifier)
+
+    @property
+    def state(self):
+        return self._state
+    
+    @state.setter
+    def state(self, string:Literal['pending', 'processing', 'resolved']):
+        if string == 'pending':
+            self._state = string
+        elif string == 'processing':
+            self._state = string
+        elif string == 'resolved':
+            self._state = None
+
+    def process(self) -> 'bool|Action':
+        '''state -> processing, return true'''
+        self.state = 'processing'
+        return True
+'''EffectBlocks End'''
+
 class Card(GameComponent):
     def __init__(self, owner:'HalfBoard', name='default card', color:Literal['R', 'Y', 'B']|None=None, 
                  speed:int|None=None, discription:str|None=None, image:str|None=None, *effects):
@@ -136,7 +319,7 @@ class Card(GameComponent):
         self._active = state
 
     def on_top(self):
-        if isinstance(self.location, Zone) or isinstance(self.location, Deck):
+        if isinstance(self.location, Zone) or isinstance(self.location, Deck) or isinstance(self.location, Graveyard):
             return True if self.location.on_top() == self else False
         else:
             # Hand doesn't have depth concept
@@ -177,12 +360,54 @@ class Card(GameComponent):
             return _value
         else:
             return None
+
 '''Card Types'''
 class Creature(Card):
+    class _CreatureAttackEffect(Effect):
+        _name = 'AttackEffect'
+        bind_to: 'Creature'
+        choice: 'Creature._CreatureAttackEffect._AttackButtonChoice|SelectPlaceChoice'
+
+        class _AttackButtonChoice(ButtonChoice, GivePlaceEvent):
+            targets: list['Pack'] = []
+            name = 'PressAttackButton'
+            def match(self, key:'GameComponent|str|Choice|None', index:int|None):
+                if key == self.key:
+                    for zone in self.effect.board.opponent(self.effect.bind_to.halfboard).zones:
+                        card = zone.on_top()
+                        if card and card.power:
+                            self.targets.append(zone)
+                    if not self.targets:
+                        self.targets = [self.effect.board.opponent(self.effect.bind_to.halfboard).hand]
+                    return True
+                else:
+                    return False
+
+        def _execute(self, in_event: 'Choice|Action|None') -> 'Choice|Action|None':
+            if self.chosen(in_event):
+                if self.choice.identifier == 0:
+                    assert isinstance(self.choice, self._AttackButtonChoice)
+                    return SelectPlaceChoice(self, self.choice.targets, self.choice.image, identifier=1)
+                elif self.choice.identifier == 1:
+                    assert isinstance(self.choice, SelectPlaceChoice)
+                    if not isinstance(self.choice.place, Zone):
+                        print(f'Attack should target Zone but targetted {self.choice.place}!')
+                        return None
+                    return Attack(self, self.bind_to, self.choice.place)
+            else:
+                if (self.bind_to.is_for_current_player() and
+                        self.bind_to.location == self.board.current_player.main_zone and
+                        self.bind_to.active == 'active' and
+                        self.bind_to.power):
+                    return self._AttackButtonChoice(self, image='./images/choice_attack.png', identifier=0)
+                else:
+                    return None
+    
     def __init__(self, owner:'HalfBoard', name='default creature', color=None,
                  power=1, speed=None, discription=None, image=None, *effects):
         super().__init__(owner, name, color, speed, discription, image, *effects)
         self.power = power
+        self._effects.append(self._CreatureAttackEffect(self))
 
 class Spell(Card):
     def __init__(self, owner:'HalfBoard', name='default spell', color=None,
@@ -195,200 +420,10 @@ class Artifact(Card):
         super().__init__(owner, name, color, speed, discription, image)
 '''Card Types End'''
 
-class Effect():
-    '''bind_to, effectblocks, board, is_valid'''
-    _name='Effect'
-
-    def __init__(self, bind_to:GameComponent, name:str|None=None):
-        self.bind_to = bind_to
-        if name:
-            self.name = name
-        self.choice: Choice|None = None
-
-    def __repr__(self):
-        return f"<{self.name} at {hex(id(self))}>"
-
-    @property
-    def board(self):
-        if self.bind_to:
-            return self.bind_to.board
-        else:
-            raise AttributeError("Tried to load Board from free Effect!")
-    
-    @property
-    def name(self):
-        return f"{self.bind_to.name}'s {self._name}"
-    
-    @name.setter
-    def name(self, name:str):
-        self._name = name
-
-    def is_valid(self):
-        '''카드: 드러남 SubZone: 존재함 이외: 항상'''
-        if self.bind_to:
-            if isinstance(self.bind_to, Card):
-                if self.bind_to.reveal_type():
-                    return True
-            elif isinstance(self.bind_to, SubZone):
-                try:
-                    return bool(self.bind_to.row)
-                except Exception:
-                    pass
-            else:
-                return True
-            self.current_eb = None
-            return False
-        else:
-            print(f'Effect {self} has no bind_to! Delete.')
-            del self
-            return False
-
-    def valid_property(self, var:T) -> T|None:
-        return var if self.is_valid() else None
-
-    def execute(self, in_event: 'Choice|Action|None') -> 'Choice|Action|None':
-        event = self._execute(in_event)
-        if isinstance(event, Choice):
-            self.choice = event
-        else:
-            self.choice = None
-        return event
-    
-    def _execute(self, in_event: 'Choice|Action|None') -> 'Choice|Action|None':
-        '''
-        if self.chosen(in_event):
-            event = Action
-        elif Condition:
-            event = Choice
-        return self.give_event(event)
-        '''
-        raise NotImplementedError
-
-    def chosen(self, in_event:'Event|None') -> bool:
-        return bool(self.choice and self.choice == in_event)
-    
-    def finish_choice(self, action:'Action|None') -> 'Action|None':
-        self.choice = None
-        return action
-
 class NoCardError(Exception):
     pass
 class NoPlaceError(Exception):
     pass
-
-'''EffectBlocks'''
-
-class Condition:
-    def __init__(self, func):
-        self.func = func
-
-    def __call__(self, *args, **kwargs):
-        return self.func(*args, **kwargs)
-        
-@Condition
-def get_card_active_state(in_event, card:Card):
-    '''{0: inactive, 1: active, 2: None}'''
-    if card.active == None:
-        return 2
-    elif card.active == 'active':
-        return 1
-    elif card.active == 'inactive':
-        return 0
-    else:
-        return False
-
-class Event:
-    name: str = 'Dummy Event'
-    def __init__(self, effect:Effect|None, name:str) -> None:
-        self.effect = effect
-        self.name = name
-
-    def __repr__(self):
-        return f"<{self.name} {'by ' + self.effect.name if self.effect else ''} at {hex(id(self))}>"
-
-    def is_valid(self):
-        if self.effect:
-            return self.effect.is_valid()
-        else:
-            return True
-
-class Restriction(Event):
-    def verify(self, event:Event) -> bool:
-        return True
-
-class Choice(Event):
-    effect: Effect
-    image: str|None = None
-    is_button: bool = False
-    name = 'Dummy Choice'
-    def __init__(self, effect: Effect, key:GameComponent|Literal['temp zone']|'Choice'|None=None,
-                 chooser:Literal['self', 'opponent']='self', name:str|None=None):
-        super().__init__(effect, name if name else self.name)
-        self.chooser = self.effect.bind_to.halfboard if chooser == 'self' else self.effect.board.opponent(self.effect.bind_to.halfboard)
-
-        if key:
-            self._key = key
-        else:
-            self._key = self.effect.bind_to
-
-    @property
-    def key(self):
-        if self.effect.is_valid():
-            return self._key
-        else:
-            return None
-        
-    @key.setter
-    def key(self, key:GameComponent):
-        self._key = key
-
-    def match(self, key:'GameComponent|str|Choice|None', index:int|None) -> bool:
-        '''key와 self.key 비교'''
-        if self.key == key:
-            return True
-        else:
-            return False
-
-    def clicked(self):
-        return True if self.effect.board.holding == self else False
-    
-class ButtonChoice(Choice):
-    def __init__(self, effect: Effect, image:str|None=None, chooser:Literal['self', 'opponent']='self'):
-        super().__init__(effect, key=self, chooser=chooser)
-        self.is_button = True
-        self.image = image
-    
-class GiveCardEvent(Event):
-    card:Card
-
-class GivePlaceEvent(Event):
-    place:'Pack'
-
-class Action(Event):
-    _state: Literal['pending', 'processing']|None = None
-
-    def __init__(self, effect: Effect | None, name:str, **kwargs) -> None:
-        super().__init__(effect, name)
-
-    @property
-    def state(self):
-        return self._state
-    
-    @state.setter
-    def state(self, string:Literal['pending', 'processing', 'resolved']):
-        if string == 'pending':
-            self._state = string
-        elif string == 'processing':
-            self._state = string
-        elif string == 'resolved':
-            self._state = None
-
-    def process(self) -> 'bool|Action':
-        '''state -> processing, return true'''
-        self.state = 'processing'
-        return True
-    
-'''EffectBlocks End'''
 
 '''Actions'''
 class Move(Action):
@@ -700,19 +735,14 @@ class MainZone(Zone):
         def execute(self, in_event: Choice | Action | None):
             if self.bind_to.is_collapsing(self):
                 return self.bind_to.MainZoneCollapse(self, self.bind_to)
-            
-    class _MainAttackEffect(Effect):
-        pass
 
     def __init__(self, halfboard:'HalfBoard'):
         super().__init__(halfboard, f"{halfboard.name}'s Main Zone")
 
         self.let = self._LetEffect(self)
         self.collapse = self._MainZoneCollapseEffect(self)
-        self.attack = self._MainAttackEffect(self)
         self.effects.append(self.let)
         self.effects.append(self.collapse)
-        self.effects.append(self.attack)
 
     def is_collapsing(self, effect: Effect | None = None):
         return self.is_for_current_player() and self.board.turn_end and not self.has_been_let

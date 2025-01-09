@@ -236,8 +236,8 @@ def get_card_image(card:TCG.Card):
 
 def get_choice_image(choice:TCG.Choice):
     if choice.image:
-        if choice_image_dict[choice.image]:
-            pass
+        if choice.image in choice_image_dict:
+            return choice_image_dict[choice.image]
         else:
             try:
                 choice_image_dict[choice.image] = pg.image.load(choice.image)
