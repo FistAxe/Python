@@ -202,6 +202,20 @@ class SelectPlaceChoice(Choice, GivePlaceEvent):
         self.image = image
         self._key = key
 
+    @property
+    def key(self):
+        if self.effect.is_valid():
+            return self._key
+        else:
+            return None
+
+    def match(self, key:'GameComponent|str|Choice|None', index:int|None) -> bool:
+        if self.key and key in self.key:
+            self.place = key
+            return True
+        else:
+            return False
+
 class Action(Event):
     _state: Literal['pending', 'processing']|None = None
 
@@ -387,19 +401,26 @@ class Creature(Card):
             if self.chosen(in_event):
                 if self.choice.identifier == 0:
                     assert isinstance(self.choice, self._AttackButtonChoice)
-                    return SelectPlaceChoice(self, self.choice.targets, self.choice.image, identifier=1)
+                    return SelectPlaceChoice(self, self.choice.targets, self.choice.image, name='AttackTargetChoice', identifier=1)
                 elif self.choice.identifier == 1:
                     assert isinstance(self.choice, SelectPlaceChoice)
-                    if not isinstance(self.choice.place, Zone):
+                    if isinstance(self.choice.place, Hand):
+                        print('Direct Attack!')
+                        return DirectAttack(self, self.bind_to, self.choice.place.halfboard)
+                    elif not isinstance(self.choice.place, Zone):
                         print(f'Attack should target Zone but targetted {self.choice.place}!')
                         return None
-                    return Attack(self, self.bind_to, self.choice.place)
+                    else:
+                        return Attack(self, self.bind_to, self.choice.place)
             else:
                 if (self.bind_to.is_for_current_player() and
                         self.bind_to.location == self.board.current_player.main_zone and
                         self.bind_to.active == 'active' and
                         self.bind_to.power):
-                    return self._AttackButtonChoice(self, image='./images/choice_attack.png', identifier=0)
+                    if self.choice and self.choice.identifier == 0:
+                        return self.choice
+                    else:
+                        return self._AttackButtonChoice(self, image='./images/choice_attack.png', identifier=0)
                 else:
                     return None
     
@@ -490,22 +511,72 @@ class Attack(Action):
         if not isinstance(self.place, Zone):
             print('You must attack zone!')
             return False
-        if not self.card.power:
+        if self.card.power is None:
             print(f'Attacking card {self.card} should have power! Attack process failed.')
             return False
         
         target = self.place.on_top()
-        if not target or target.power == None:
+        if not target or target.power is None:
             print(f"{target} has no power -> Cannot Attack! Act kept.")
             return False
         else:
-            if target.power < self.card.power:
+            atk_power_tot: int = self.calculate_power(self.card)
+            def_power_tot: int = self.calculate_power(target)
+
+            if def_power_tot < atk_power_tot:
                 self.finished = True
                 self.state = 'pending'
-                return Discard(None, target)
+                return self.place.get_collapse(effect=None) # Attack Collapse by Core Rule. Cannot be nulified by effect changes.
             else:
                 print('Stronger Target -> No Damage.')
                 return False
+
+    def calculate_power(self, card:Card) -> int:
+        assert card.power is not None
+        total_power: int = card.power
+        if isinstance(card.location, MainZone):
+            for zone in card.location.halfboard.row.subzones:
+                p = zone.get_power()
+                if p:
+                    total_power += p
+        elif isinstance(card.location, SubZone):
+            p = card.location.halfboard.main_zone.get_power()
+            if p:
+                total_power += p
+        else:
+            raise Exception('card location is not zone!')
+        return total_power
+
+class DirectAttack(Attack):
+    def __new__(cls, effect: Effect|None, card:Card, halfboard:'HalfBoard', name:str='Attack'):
+        if not card.power:
+            print(f'Attacking card {card} should have power! Attack Init Failed.')
+            return None
+        else:
+            return super(Attack, cls).__new__(cls)
+
+    def __init__(self, effect:Effect|None, card:Card, halfboard:'HalfBoard', name:str='DirectAttack') -> None:
+        super(Attack, self).__init__(effect, name)
+        self.card = card
+        self.target = halfboard
+
+    def process(self):
+        if not super(Attack, self).process():
+            return False
+        if not hasattr(self, 'card') or not self.card:
+            raise NoCardError
+        if self.card.power is None:
+            print(f'Attacking card {self.card} should have power! Attack process failed.')
+            return False
+        
+        atk_power_tot: int = self.calculate_power(self.card)
+        if atk_power_tot > 0:
+            self.finished = True
+            self.state = 'pending'
+            return self.target.get_loseaction(self.effect)
+        else:
+            print('total power is less or equal than 0. Direct Attack failed.')
+            return False
 
 class Activate(Action):
     pass
@@ -700,6 +771,14 @@ class Zone(Pack):
 
     def get_collapse(self, effect:Effect|None=None):
         return self.Collapse(effect, self)
+
+    def get_power(self):
+        '''return top card's power.'''
+        topcard = self.on_top()
+        if topcard and topcard.power is not None:
+            return topcard.power
+        else:
+            return None
     
 class MainZone(Zone):
     class MainZoneCollapse(Zone.Collapse):
@@ -998,6 +1077,7 @@ class Board(GameComponent):
         self.holding: GameComponent|Choice|str|None = None
         self.holding_from = None
         self.gamecomponents: list[Board|HalfBoard|Row|Pack|Card] = []
+        self.keys_for_choices: dict[GameComponent|Choice|str, Choice] = {}
 
     @property
     def turn(self):
@@ -1039,24 +1119,32 @@ class Board(GameComponent):
     def get_processing_order(self):
         order: list[Card|Pack|Board|Row|HalfBoard|None] = []
         order.append(self)
-        order.append(self.current_player)
-        order.append(self.opponent())
-        for player in [self.current_player, self.opponent()]:
-            order.append(player.deck)
+        for player in [self.opponent(), self.current_player]:
+            order.append(player)
+            order.append(player.main_zone)
             order.append(player.graveyard)
             order.append(player.row)
-            order.append(player.hand)
-            order.append(player.main_zone)
             for zone in player.row.subzones:
                 order.append(zone)
-        for player in [self.opponent(), self.current_player]:
+            order.append(player.deck)
+            order.append(player.hand)
+
             if not player.main_zone.is_empty():
                 order.append(player.main_zone.on_top())
-            for zone in player.row.subzones:
-                order.append(zone.on_top())
             if not player.graveyard.is_empty():
                 order.append(player.graveyard.on_top())
+            for zone in player.row.subzones:
+                order.append(zone.on_top())
         return order
+
+    def get_keys_for_choices(self):
+        self.keys_for_choices = {}
+        for choice in self.current_player.available_choices:
+            if isinstance(choice.key, list):
+                for key in choice.key:
+                    self.keys_for_choices[key] = choice
+            elif choice.key:
+                self.keys_for_choices[choice.key] = choice
 
     def initial_setting(self):
         '''시작 시 5장 뽑기. 여기서부터는 효과 처리가 필요하다.'''
@@ -1068,9 +1156,7 @@ class Board(GameComponent):
             action = a.execute(None)
 
     def interpret(self, typ:Literal['click', 'drop'], keys:list[GameComponent|Choice|str], index:int|None=None):
-        # Key selection
         key = None
-
         def key_searcher(keys, typ:type, sort:Literal['first', 'last']='first'):
             instances = [key for key in keys if isinstance(key, typ)]
             if instances:
@@ -1082,16 +1168,16 @@ class Board(GameComponent):
                     raise Exception("sort isn't 'first' or 'last'!")
             else:
                 return None
-            
-        for keytype in [Choice, str, Deck, Graveyard, Zone, Card, Row, HalfBoard, Board]:
-            if keytype == Card:
-                if key := key_searcher(keys, keytype, 'last'):
-                    break
-            else:
-                if key := key_searcher(keys, keytype):
-                    break
         
         if typ == 'click':
+            for keytype in [Choice, str, Deck, Graveyard, Zone, Card, Row, HalfBoard, Board]:
+                if keytype == Card:
+                    if key := key_searcher(keys, keytype, 'last'):
+                        break
+                else:
+                    if key := key_searcher(keys, keytype):
+                        break
+            
             if isinstance(key, str):
                 self.holding = key
                 self.holding_from = None
@@ -1114,11 +1200,13 @@ class Board(GameComponent):
             return True
         
         elif typ == 'drop':
-            if key == 'endbutton' and not self.turn%2:
-                return key
-            for choice in self.current_player.available_choices:
-                if choice.match(key, index):
-                    return choice
+            if 'endbutton' in keys and not self.turn%2:
+                return 'endbutton'
+            for key in keys:
+                if key in self.keys_for_choices:
+                    if self.keys_for_choices[key].match(key, index):
+                        return self.keys_for_choices[key]
+
         else:
             raise Exception('Not click nor drop!')
         
@@ -1197,7 +1285,7 @@ class Board(GameComponent):
                     running = True
                     # Not Idle state.
                     while running:
-                        # Action stack is not empty.
+                        # Action stack search
                         while len(self.action_stack) > 0:
                             current_action = self.action_stack[0]
                             print(f'Current Action:{current_action}. ', end="")
@@ -1242,8 +1330,7 @@ class Board(GameComponent):
                         # Escape if there's still no action.
                         if len(self.action_stack) == 0:
                             running = False
-
-                    # From here, no chain.
+                    # running end
 
                     # Check turn end here. If changed, break.
                     if self.turn_end:
@@ -1251,36 +1338,47 @@ class Board(GameComponent):
 
                     # Else, Player choose what to do.
                     print('No Idle Action. Can choose now.')
-                    chossing = True
+                    chossing: bool = True
+                    self.get_keys_for_choices()
                     while chossing:
                         print(f'Choices: {self.current_player.available_choices}')
-                        args: tuple[Literal['click', 'drop'], list, int|None] = yield
-                        print('got message')
+                        args: tuple[Literal['click', 'drop', 'rightclick'], list, int|None] = yield
                         if type(args) == tuple:
+                            print('got tuple yield')
                             typ, keys, index = args
                             if (typ == 'click' or typ == 'drop') and isinstance(keys, list):
                                 choice = self.interpret(typ, keys, index)
-                            # If not valid choice, reset the holding card.
-                            if choice == False:
+                                # If not valid choice, reset the holding card.
+                                if choice == False:
+                                    self.drop_holding()
+                                # If choice is valid, break. Give the output action to the stack.
+                                elif isinstance(choice, Choice):
+                                    print(f'your choice is {choice}.')
+                                    result = choice.effect.execute(choice)
+                                    if isinstance(result, Choice):
+                                        print(f'lead to new choice {result}...')
+                                        self.current_player.available_choices = [result]
+                                        self.get_keys_for_choices()
+                                        if typ == 'drop':
+                                            self.drop_holding()
+                                    elif isinstance(result, Action):
+                                        self.add_action(result)
+                                        chossing = False
+                                    else:
+                                        print('Your choice made no following event! Get Idle choices.')
+                                        chossing = False
+                                # Debug Endbutton.
+                                elif choice == 'endbutton':
+                                    self.turn_end = True
+                                    chossing = False
+                            # Cancel
+                            elif typ == 'rightclick':
+                                chossing = False
                                 self.drop_holding()
-                            # If choice is valid, break. Give the output action to the stack.
-                            elif isinstance(choice, Choice):
-                                print(f'your choice is {choice}.')
-                                chossing = False
-                                result = choice.effect.execute(choice)
-                                if isinstance(result, Choice):
-                                    print(f'lead to new choice {result}...')
-                                    self.current_player.available_choices = [result]
-                                elif isinstance(result, Action):
-                                    self.add_action(result)
-                                else:
-                                    print('Your choice failed!')
-                            elif choice == 'endbutton':
-                                self.turn_end = True
-                                chossing = False
                         else:
-                            print('Not a right type of yield!')
-                    # Go back to idle state
+                            print('yield is not a tuple!')
+
+                    # Go back to action stack search
 
                 # When self.turn_end is True, loop breaks.
                 print('end turn')

@@ -145,7 +145,7 @@ for x in range(HALFBOARD_WIDTH - 2*ZONE_SIZE[0]):
     pg.draw.line(row1, (200, 200, 250, int(255*transparancy)), (x, 0), (x, ROW_HEIGHT - LINE_WIDTH))
 row2 = row1.copy()
 
-hand_img = pg.Surface((10, 10))
+hand_img = pg.Surface((HALFBOARD_WIDTH, ZONE_SIZE[1]))
 hand_img.fill(WHITE)
 hand1_center = [BOARD_MARGIN + HALFBOARD_WIDTH//2 - ZONE_SIZE[0]//2, ROW6]
 hand2_center = [BOARD_MARGIN + HALFBOARD_WIDTH//2 - ZONE_SIZE[0]//2, ROW1]
@@ -285,8 +285,8 @@ def screen_generator():
         gamecomponents[player2.main_zone] = SURF.blit(mz2, mz2_rv)
         gamecomponents[player1.row] = SURF.blit(row1, row1_rv)
         gamecomponents[player2.row] = SURF.blit(row2, row2_rv)
-        gamecomponents[player1.hand] = SURF.blit(hand_img, hand1_center)
-        gamecomponents[player2.hand] = SURF.blit(hand_img, hand2_center)
+        gamecomponents[player1.hand] = SURF.blit(hand_img, hand1_center, area=(0, 0, CARD_SIZE[0] + 20*player1.hand.length, ZONE_SIZE[1]))
+        gamecomponents[player2.hand] = SURF.blit(hand_img, hand2_center, area=(0, 0, CARD_SIZE[0] + 20*player2.hand.length, ZONE_SIZE[1]))
         gamecomponents['endbutton'] = SURF.blit(end_button, end_button_rv)
 
     def subzone_generator():
@@ -451,7 +451,7 @@ gameplay = board.play()
 next(gameplay)
 refresh = True
 
-def calculate(message:tuple[Literal['click', 'drop'], list, int|None]):
+def calculate(message:tuple[Literal['click', 'drop', 'rightclick'], list, int|None]):
     return gameplay.send(message)
 
 screen_generator()
@@ -485,11 +485,11 @@ while refresh:
                     subzone_x.sort()
                     x = pg.mouse.get_pos()[0]
                     for i in range(len(subzone_x)):
-                        # There is more than 1 existing subzone on left
+                        # There is more than 1 existing subzone on right
                         if subzone_x[i] > x:
                             making_subzone = i + 1
                             break
-                    # Making subzone on very left
+                    # Making subzone on very right
                     if making_subzone == 0:
                         making_subzone = len(subzone_x) + 1
                 # On Subzone -> Initialize making_subzone.
@@ -497,8 +497,9 @@ while refresh:
                     making_subzone = 0
 
         if event.type == pg.MOUSEBUTTONDOWN:
-            # print('pressed')
-            if not board.holding:
+            if event.button == 3:
+                calculate(('rightclick', [], None))
+            elif not board.holding:
                 keys = []
                 for key in gamecomponents:
                     if gamecomponents[key].collidepoint(pg.mouse.get_pos()):
@@ -509,25 +510,28 @@ while refresh:
                 raise Exception('Tryed to click while dragging.')
 
         if event.type == pg.MOUSEBUTTONUP:
-            print('unpressed')
-            keys = []
-            for key in gamecomponents:
-                if gamecomponents[key].collidepoint(pg.mouse.get_pos()):
-                    #print(f'you unclicked {key}.')
-                    keys.append(key)
-            if board.holding:
-                try:
-                    ans = calculate(('drop', keys, making_subzone))
-                    if ans == False:
-                        raise Exception('Something went Wrong')
-                    elif isinstance(ans, str):
-                        if ans == 'end!':
-                            raise EndException()
-                        else:
-                            raise Exception(ans)
-                except EndException:
-                    refresh = False
-            making_subzone = 0
+            if event.button == 3:
+                pass
+            else:
+                print('unpressed')
+                keys = []
+                for key in gamecomponents:
+                    if gamecomponents[key].collidepoint(pg.mouse.get_pos()):
+                        #print(f'you unclicked {key}.')
+                        keys.append(key)
+                if board.holding:
+                    try:
+                        ans = calculate(('drop', keys, making_subzone))
+                        making_subzone = 0
+                        if ans == False:
+                            raise Exception('Something went Wrong')
+                        elif isinstance(ans, str):
+                            if ans == 'end!':
+                                raise EndException()
+                            else:
+                                raise Exception(ans)
+                    except EndException:
+                        refresh = False
 
     screen_generator()
     pg.display.update()
