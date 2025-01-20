@@ -1,4 +1,4 @@
-from typing import Callable, Literal, Union, List, Any, Protocol, TypeVar, Generic
+from typing import Callable, Literal, Union, List, Any, TypeVar, Generic
 from random import shuffle
 
 T = TypeVar("T")
@@ -115,7 +115,7 @@ class Effect():
 
     def chosen(self, in_event:'Event|None') -> bool:
         return bool(self.choice and self.choice == in_event)
-    
+
 '''EffectBlocks'''
 class Condition:
     def __init__(self, func):
@@ -183,7 +183,7 @@ class Choice(Event):
 
     def clicked(self):
         return True if self.effect.board.holding == self else False
-    
+
 class ButtonChoice(Choice):
     def __init__(self, effect: Effect, image:str|None=None, chooser:Literal['self', 'opponent']='self', name:str|None=None, identifier:int|None=None):
         super().__init__(effect, key=self, chooser=chooser, name=name, identifier=identifier)
@@ -465,7 +465,7 @@ class Move(Action):
         else:
             self.place.append(self.card)
             return True
-    
+
 class Discard(Move):
     place:'Graveyard'
     def __init__(self, effect: Effect | None, card:Card, place:'Graveyard|None'=None, name:str='Discard'):
@@ -529,6 +529,7 @@ class Attack(Action):
                 return self.place.get_collapse(effect=None) # Attack Collapse by Core Rule. Cannot be nulified by effect changes.
             else:
                 print('Stronger Target -> No Damage.')
+                self.card.active = 'inactive'
                 return False
 
     def calculate_power(self, card:Card) -> int:
@@ -779,7 +780,7 @@ class Zone(Pack):
             return topcard.power
         else:
             return None
-    
+
 class MainZone(Zone):
     class MainZoneCollapse(Zone.Collapse):
         def process(self):
