@@ -78,11 +78,6 @@ class Effect():
             if isinstance(self.bind_to, Card):
                 if self.bind_to.reveal_type():
                     return True
-            elif isinstance(self.bind_to, SubZone):
-                try:
-                    return bool(self.bind_to.row)
-                except Exception:
-                    pass
             else:
                 return True
             self.current_eb = None
@@ -766,13 +761,6 @@ class Zone(Pack):
         else:
             return None
 
-    def is_collapsing(self, effect:Effect|None=None):
-        '''"자기 턴이고" "그 턴이 끝났고" "Let 된 적 없고" "예약되지 않았으면"'''
-        return self.is_for_current_player() and self.board.turn_end and not self.has_been_let
-
-    def get_collapse(self, effect:Effect|None=None):
-        return self.Collapse(effect, self)
-
     def get_power(self):
         '''return top card's power.'''
         topcard = self.on_top()
@@ -829,154 +817,6 @@ class MainZone(Zone):
 
 class SubZone(Zone):
     index: int
-
-    class Collapse(Zone.Collapse):
-        place: 'SubZone'
-        def process(self):
-            result = super().process()
-            if result == True:
-                self.place.row.remove(self.place)
-                del self.place
-            return result
-        
-    class _LetEffect(Effect):
-        bind_to: 'SubZone'
-        choice: GiveCardEvent
-
-        class _SubZoneLetAction(Zone.Let):
-            effect: 'SubZone._LetEffect'
-            def generate(self, card:Card|None):
-                if card:
-                    self.card = card
-                if not hasattr(self, 'card') or self.card == None:
-                    if self.effect.bind_to.init_card:
-                        self.card = self.effect.bind_to.init_card
-                    else:
-                        raise Exception('No card to Let!')
-            
-            def process(self):
-                result = super().process()
-                # If was first Let, finish initialization.
-                if self.effect.bind_to.init_card:
-                    self.effect.bind_to.init_card = None
-                return result
-        
-        def __init__(self, bind_to:'SubZone'):
-            super().__init__(bind_to)
-            self.bind_to = bind_to
-        
-        def _execute(self, in_event: Choice | Action | None):
-            if self.chosen(in_event):
-                if self.choice.card.active != 'inactive':
-                    card = self.choice.card
-                else:
-                    return None
-            elif self.bind_to.is_for_current_player():
-                if self.bind_to.init_card and not in_event:
-                    card = self.bind_to.init_card
-                else:
-                    return self.bind_to._CardIntoPackChoice(self, self.bind_to)
-            else:
-                return None
-            return self._SubZoneLetAction(self, card, place=self.bind_to)
-
-    class _SubZoneCollapseEffect(Effect):
-        bind_to: 'SubZone'
-
-        def execute(self, in_event: Choice | Action | None):
-            if (self.bind_to.is_empty() and not self.bind_to.init_card) or\
-                self.bind_to.is_collapsing(self):
-                return self.bind_to.Collapse(self, self.bind_to)
-
-    def __init__(self, halfboard):
-        super().__init__(halfboard)
-        self.init_card: Card|None = None
-        self.let = self._LetEffect(self)
-        self.CollapseEffect = self._SubZoneCollapseEffect(self)
-        self.effects.append(self.let)
-        self.effects.append(self.CollapseEffect)
-
-    @property
-    def row(self):
-        if self in self.halfboard.row.subzones:
-            return self.halfboard.row
-        else:
-            raise Exception('Lonely SubZone!')
-
-class Row(GameComponent):
-    class Deploy(Action):
-        def __init__(self, effect: Effect | None, card:Card, row:'Row', num:int) -> None:
-            super().__init__(effect, 'Deploy')
-            self.card = card
-            self.row = row
-            self.new_index = num
-
-        def process(self):
-            super().process()
-            new_subzone = self.row.create_subzone(self.new_index)
-            new_subzone.init_card = self.card
-            self.state = 'resolved'
-            return True
-
-    class _DeployEffect(Effect):
-        bind_to: 'Row'
-        choice: 'Row._DeployEffect._TempZoneChoice'
-        _name='DeployEffect'
-
-        class _TempZoneChoice(Choice, GiveCardEvent):
-            subzone_index: int
-            name='DropOnTempZone'
-            def __init__(self, effect:Effect):
-                super().__init__(effect, key='temp zone')
-
-            def match(self, key:GameComponent|str, index:int|None):
-                if isinstance(self.effect.board.holding, Card) and self.key == key and \
-                   self.effect.bind_to.is_for_current_player():
-                    if index:
-                        self.subzone_index = index - 1
-                    else:
-                        raise Exception('No index while Deploying!')
-                    self.card = self.effect.board.holding
-                    return True
-                else:
-                    return False
-
-        def __init__(self, bind_to:'Row'):
-            super().__init__(bind_to)
-
-        def _execute(self, in_event: Choice | Action | None):
-            if self.chosen(in_event):
-                if self.choice.card.active != 'inactive':
-                    action = self.bind_to.Deploy(self, self.choice.card, self.bind_to, self.choice.subzone_index)
-                else:
-                    action = None
-                return action
-            elif self.bind_to.is_for_current_player() and len(self.bind_to.subzones) < 3:
-                return self._TempZoneChoice(self)
-
-
-    def __init__(self, halfboard:'HalfBoard'):
-        self._halfboard = halfboard
-        self.name = f"{self.halfboard.name}'s Row"
-        self.subzones: list[SubZone] = []
-        self.Deploy = type('Deploy', (Row.Deploy,), {'row': self})
-        self.DeployEffect = self._DeployEffect(self)
-        self.effects: list[Effect] = [self.DeployEffect]
-
-    def rename(self):
-        for subzone in self.subzones:
-            subzone.index = self.subzones.index(subzone)
-            subzone.name = f"{self.halfboard.name}'s Sub Zone {subzone.index}"
-
-    def create_subzone(self, index):
-        new_subzone = SubZone(self.halfboard)
-        self.subzones.insert(index, new_subzone)
-        self.rename()
-        return new_subzone
-
-    def remove(self, subzone:SubZone):
-        self.subzones.remove(subzone)
-        self.rename()
 '''HalfBoard Components End'''
 
 class HalfBoard(GameComponent):
@@ -998,15 +838,23 @@ class HalfBoard(GameComponent):
         self.name = player_name
         self.deck = Deck(self)
         self.graveyard = Graveyard(self)
-        self.main_zone = MainZone(self)
-        self.row = Row(self)
+        self.mainzones = [
+            MainZone(self),
+            MainZone(self),
+            MainZone(self)
+        ]
+        self.subzones = [
+            SubZone(self),
+            SubZone(self),
+            SubZone(self)
+        ]
         self.hand = Hand(self)
         self.effects: list[Effect] = []
         self.available_choices: list[Choice] = []
 
     @property
     def zones(self):
-        return [self.main_zone] + self.row.subzones
+        return self.mainzones + self.subzones
     
     @property
     def board(self):
@@ -1077,7 +925,7 @@ class Board(GameComponent):
 
         self.holding: GameComponent|Choice|str|None = None
         self.holding_from = None
-        self.gamecomponents: list[Board|HalfBoard|Row|Pack|Card] = []
+        self.gamecomponents: list[Board|HalfBoard|Pack|Card] = []
         self.keys_for_choices: dict[GameComponent|Choice|str, Choice] = {}
 
     @property
@@ -1102,40 +950,48 @@ class Board(GameComponent):
 
     def refresh_gamecomponents(self):
         self.gamecomponents = [self]
+        # BaseComponents
         for player in self.players:
             self.gamecomponents.append(player)
             self.gamecomponents.append(player.deck)
             self.gamecomponents.append(player.hand)
             self.gamecomponents.append(player.graveyard)
-            self.gamecomponents.append(player.row)
+            for zone in player.zones:
+                self.gamecomponents.append(zone)
+        # Cards
+        for player in self.players:
+            for mz in player.mainzones:
+                for card in mz._cards:
+                    self.gamecomponents.append(card)
             gy_top_card = player.graveyard.on_top()
             if gy_top_card:
                 self.gamecomponents.append(gy_top_card)
-            for zone in player.zones:
-                self.gamecomponents.append(zone)
-                for card in zone._cards:
+            for sz in player.subzones:
+                for card in sz._cards:
                     self.gamecomponents.append(card)
         return self.gamecomponents
 
     def get_processing_order(self):
-        order: list[Card|Pack|Board|Row|HalfBoard|None] = []
+        order: list[Card|Pack|Board|HalfBoard|None] = []
         order.append(self)
         for player in [self.opponent(), self.current_player]:
             order.append(player)
-            order.append(player.main_zone)
+            order.extend(player.mainzones)
             order.append(player.graveyard)
-            order.append(player.row)
-            for zone in player.row.subzones:
-                order.append(zone)
+            order.extend(player.subzones)
             order.append(player.deck)
             order.append(player.hand)
 
-            if not player.main_zone.is_empty():
-                order.append(player.main_zone.on_top())
+            for zone in player.mainzones:
+                card = zone.on_top()
+                if card:
+                    order.append(card)
             if not player.graveyard.is_empty():
                 order.append(player.graveyard.on_top())
-            for zone in player.row.subzones:
-                order.append(zone.on_top())
+            for zone in player.subzones:
+                card = zone.on_top()
+                if card:
+                    order.append(card)
         return order
 
     def get_keys_for_choices(self):
@@ -1171,7 +1027,7 @@ class Board(GameComponent):
                 return None
         
         if typ == 'click':
-            for keytype in [Choice, str, Deck, Graveyard, Zone, Card, Row, HalfBoard, Board]:
+            for keytype in [Choice, str, Deck, Graveyard, Zone, Card, HalfBoard, Board]:
                 if keytype == Card:
                     if key := key_searcher(keys, keytype, 'last'):
                         break
@@ -1261,7 +1117,7 @@ class Board(GameComponent):
 
         self.initial_setting()
         # Debug
-        self.player2.main_zone.append(Card(self.player2, 'main card'))
+        self.player2.mainzones[0].append(Card(self.player2, 'main card'))
 
         while not self.loser:
             # Catch losing condition
@@ -1343,12 +1199,12 @@ class Board(GameComponent):
                     self.get_keys_for_choices()
                     while chossing:
                         print(f'Choices: {self.current_player.available_choices}')
-                        args: tuple[Literal['click', 'drop', 'rightclick'], list, int|None] = yield
+                        args: tuple[Literal['click', 'drop', 'rightclick'], list] = yield
                         if type(args) == tuple:
                             print('got tuple yield')
-                            typ, keys, index = args
+                            typ, keys = args
                             if (typ == 'click' or typ == 'drop') and isinstance(keys, list):
-                                choice = self.interpret(typ, keys, index)
+                                choice = self.interpret(typ, keys)
                                 # If not valid choice, reset the holding card.
                                 if choice == False:
                                     self.drop_holding()
