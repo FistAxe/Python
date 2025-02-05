@@ -426,6 +426,7 @@ def screen_generator():
             )
     explanation_generator()
 
+
 # Start
 gameplay = board.play()
 next(gameplay)
