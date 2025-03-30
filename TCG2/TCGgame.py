@@ -13,6 +13,8 @@ HEIGHT = 768
 # Color Definition
 WHITE = pg.Color(255, 255, 255)
 BLACK = pg.Color(0, 0, 0)
+DARK_BLUE = pg.Color(50, 50, 100)
+DARK_RED = pg.Color(100, 50, 50)
 BOARD_BG = pg.Color(230, 230, 255)
 ROW_BG = pg.Color(200, 200, 255)
 GY_BG = pg.Color(200, 200, 200)
@@ -26,22 +28,24 @@ FPS = pg.time.Clock()
 FPS.tick(60)
 
 # Layout Definition
-RIGHT_MARGINE = 400
+RIGHT_MARGINE = 500
 BOARD_MARGIN = 5
 LINE_WIDTH = 3
+INDICATOR_HEIGHT = 40
 HALFBOARD_WIDTH = WIDTH - RIGHT_MARGINE - 2*BOARD_MARGIN
-ROW_HEIGHT = (HEIGHT - 2*BOARD_MARGIN)//6
+ROW_HEIGHT = (HEIGHT - 2*BOARD_MARGIN - INDICATOR_HEIGHT)//6
 HALFBOARD_HEIGHT = ROW_HEIGHT*2
 
 ROW1 = BOARD_MARGIN
 ROW2 = ROW1 + ROW_HEIGHT
 ROW3 = ROW2 + ROW_HEIGHT
-ROW4 = ROW3 + ROW_HEIGHT
+ROW_I = ROW3 + ROW_HEIGHT
+ROW4 = ROW_I + INDICATOR_HEIGHT
 ROW5 = ROW4 + ROW_HEIGHT
 ROW6 = ROW5 + ROW_HEIGHT
 
 # Card Definition
-CARD_SIZE = [90, 120]
+CARD_SIZE = [75, 105]
 CARD_NAME_HEIGHT = 12
 card_back_image = pg.image.load('./images/card_back.png').convert()
 card_front_image = pg.image.load('./images/card_front.png').convert()
@@ -88,10 +92,13 @@ def get_speed_image(speed:int):
 # Zone Definition
 ZONE_MARGIN = 2
 ZONE_SIZE = [CARD_SIZE[0] + 2*ZONE_MARGIN, CARD_SIZE[1] + 2*ZONE_MARGIN]
-SUBZONE_MARGIN = 30
+SUBZONE_MARGIN = 40
+ZONE_HEIGHT_FIX = (ROW_HEIGHT - ZONE_SIZE[1])//2
+if ZONE_HEIGHT_FIX < 0:
+    ZONE_HEIGHT_FIX = 0
 
-def card_on_zone(zone_pos):
-    return [zone_pos[0] + ZONE_MARGIN, zone_pos[1] + ZONE_MARGIN]
+def card_on_zone(zone_pos, is_turned:bool):
+    return [zone_pos[0] - CARD_SIZE[0]//2, zone_pos[1] - CARD_SIZE[1]//2]
 
 ROW_WIDTH = HALFBOARD_WIDTH - ZONE_SIZE[0]*2
 MARGINE_BETWEEN_ZONES = 60
@@ -112,35 +119,38 @@ halfboard_surface = pg.Surface((HALFBOARD_WIDTH, HALFBOARD_HEIGHT))
 halfboard_surface.fill(BOARD_BG)
 pg.draw.rect(halfboard_surface, BLACK, halfboard_surface.get_rect(), LINE_WIDTH)
 
-deck1_rv = [COLUMN_RIGHT, ROW5, ZONE_SIZE[0], ZONE_SIZE[1]]
-deck2_rv = [COLUMN_LEFT, ROW2, ZONE_SIZE[0], ZONE_SIZE[1]]
-deck_surface = pg.Surface((ZONE_SIZE[0], ZONE_SIZE[1]))
+def get_zonetyp_rv(left:int, top:int):
+    return [left, top + ZONE_HEIGHT_FIX, ZONE_SIZE[0], ZONE_SIZE[1]]
+
+deck1_rv = get_zonetyp_rv(COLUMN_RIGHT, ROW5)
+deck2_rv = get_zonetyp_rv(COLUMN_LEFT, ROW2)
+deck_surface = pg.Surface(ZONE_SIZE)
 deck_surface.fill(WHITE)
 pg.draw.rect(deck_surface, BLACK, deck_surface.get_rect(), LINE_WIDTH)
 
-gy1_rv = [COLUMN_RIGHT, ROW4, ZONE_SIZE[0], ZONE_SIZE[1]]
-gy2_rv = [COLUMN_LEFT, ROW3, ZONE_SIZE[0], ZONE_SIZE[1]]
-graveyard_surface = pg.Surface((ZONE_SIZE[0], ZONE_SIZE[1]))
+gy1_rv = get_zonetyp_rv(COLUMN_RIGHT, ROW4)
+gy2_rv = get_zonetyp_rv(COLUMN_LEFT, ROW3)
+graveyard_surface = pg.Surface(ZONE_SIZE)
 graveyard_surface.fill(GY_BG)
 pg.draw.rect(graveyard_surface, BLACK, graveyard_surface.get_rect(), LINE_WIDTH)
 
-mz1_1_rv = [COLUMN1, ROW4, ZONE_SIZE[0], ZONE_SIZE[1]]
-mz1_2_rv = [COLUMN2, ROW4, ZONE_SIZE[0], ZONE_SIZE[1]]
-mz1_3_rv = [COLUMN3, ROW4, ZONE_SIZE[0], ZONE_SIZE[1]]
-mz2_1_rv = [COLUMN1, ROW3, ZONE_SIZE[0], ZONE_SIZE[1]]
-mz2_2_rv = [COLUMN1, ROW3, ZONE_SIZE[0], ZONE_SIZE[1]]
-mz2_3_rv = [COLUMN1, ROW3, ZONE_SIZE[0], ZONE_SIZE[1]]
-mainzone_surface = pg.Surface((ZONE_SIZE[0], ZONE_SIZE[1]))
+mz1_1_rv = get_zonetyp_rv(COLUMN1, ROW4)
+mz1_2_rv = get_zonetyp_rv(COLUMN2, ROW4)
+mz1_3_rv = get_zonetyp_rv(COLUMN3, ROW4)
+mz2_1_rv = get_zonetyp_rv(COLUMN1, ROW3)
+mz2_2_rv = get_zonetyp_rv(COLUMN2, ROW3)
+mz2_3_rv = get_zonetyp_rv(COLUMN3, ROW3)
+mainzone_surface = pg.Surface(ZONE_SIZE)
 mainzone_surface.fill(WHITE)
 pg.draw.rect(mainzone_surface, BLACK, mainzone_surface.get_rect(), LINE_WIDTH)
 
-sz1_1_rv = [COLUMN1, ROW5, ZONE_SIZE[0], ZONE_SIZE[1]]
-sz1_2_rv = [COLUMN2, ROW5, ZONE_SIZE[0], ZONE_SIZE[1]]
-sz1_3_rv = [COLUMN3, ROW5, ZONE_SIZE[0], ZONE_SIZE[1]]
-sz2_1_rv = [COLUMN1, ROW2, ZONE_SIZE[0], ZONE_SIZE[1]]
-sz2_2_rv = [COLUMN1, ROW2, ZONE_SIZE[0], ZONE_SIZE[1]]
-sz2_3_rv = [COLUMN1, ROW2, ZONE_SIZE[0], ZONE_SIZE[1]]
-subzone_surface = pg.Surface((ZONE_SIZE[0], ZONE_SIZE[1]))
+sz1_1_rv = get_zonetyp_rv(COLUMN1, ROW5)
+sz1_2_rv = get_zonetyp_rv(COLUMN2, ROW5)
+sz1_3_rv = get_zonetyp_rv(COLUMN3, ROW5)
+sz2_1_rv = get_zonetyp_rv(COLUMN1, ROW2)
+sz2_2_rv = get_zonetyp_rv(COLUMN2, ROW2)
+sz2_3_rv = get_zonetyp_rv(COLUMN3, ROW2)
+subzone_surface = pg.Surface(ZONE_SIZE)
 subzone_surface.fill(WHITE)
 pg.draw.rect(subzone_surface, BLACK, subzone_surface.get_rect(), LINE_WIDTH)
 
@@ -154,8 +164,14 @@ for x in range(HALFBOARD_WIDTH - 2*ZONE_SIZE[0]):
 
 hand_img = pg.Surface((HALFBOARD_WIDTH, ZONE_SIZE[1]))
 hand_img.fill(WHITE)
-hand1_center = [BOARD_MARGIN + HALFBOARD_WIDTH//2 - ZONE_SIZE[0]//2, ROW6]
-hand2_center = [BOARD_MARGIN + HALFBOARD_WIDTH//2 - ZONE_SIZE[0]//2, ROW1]
+hand1_center = [BOARD_MARGIN + HALFBOARD_WIDTH//2 - ZONE_SIZE[0]//2, ROW6 + ZONE_SIZE[1]//2]
+hand2_center = [BOARD_MARGIN + HALFBOARD_WIDTH//2 - ZONE_SIZE[0]//2, ROW1 + ZONE_SIZE[1]//2]
+
+# Indicator
+TOTAL_POWER_FONT = pg.font.SysFont('Gulim', 20, italic=True)
+TOTAL_POWER_DISTANCE = 40
+total_power_2_pos = (BOARD_MARGIN + HALFBOARD_WIDTH//2 - TOTAL_POWER_DISTANCE, ROW_I + INDICATOR_HEIGHT//2 - 10)
+total_power_1_pos = (BOARD_MARGIN + HALFBOARD_WIDTH//2 + TOTAL_POWER_DISTANCE, ROW_I + INDICATOR_HEIGHT//2 - 10)
 
 # Explanation
 TITLE_FONT = pg.font.SysFont('Gulim', 40)
@@ -179,7 +195,7 @@ end_button.blit(end_button_label,
 
 
 # real images on the board. May be different from real data.
-gamecomponents: dict[TCG.GameComponent|TCG.Choice|Literal['temp zone', 'endbutton'], pg.Rect] = {}
+gamecomponents: dict[TCG.GameComponent|TCG.Effect|Literal['endbutton'], pg.Rect] = {}
 
 player1 = TCGplayer.player1
 player2 = TCGplayer.player2
@@ -203,54 +219,42 @@ def get_card_image(card:TCG.Card):
             # Make one.
             if card.color == 'R':
                 real_image_bg = card_front_R.copy()
-                real_image_bg_active = card_front_R_active.copy()
             elif card.color == 'Y':
                 real_image_bg = card_front_Y.copy()
-                real_image_bg_active = card_front_Y_active.copy()
             elif card.color == 'B':
                 real_image_bg = card_front_B.copy()
-                real_image_bg_active = card_front_B_active.copy()
             else:
                 real_image_bg = card_front_image.copy()
-                real_image_bg_active = card_front_active.copy()
             
             if card.image:
                 img = pg.image.load(card.image).convert()
                 real_image_bg.blit(img, IMAGE_COORD)
-                real_image_bg_active.blit(img, IMAGE_COORD)
             if card.name:
                 name = NAME_FONT.render(card.name, False, BLACK)
                 real_image_bg.blit(name, NAME_COORD)
-                real_image_bg_active.blit(name, NAME_COORD)
 
             card_image_dict[type(card)] = real_image_bg.convert()
-            card_image_active_dict[type(card)] = real_image_bg_active.convert()
 
-        if card.active == 'active':
-            real_image = card_image_active_dict[type(card)]
-        else:
-            real_image = card_image_dict[type(card)]
+        real_image = card_image_dict[type(card)]
 
         # Draw variable values on each frame
         if card.power:
             real_image.blit(get_power_image(card.power), POWER_COORD)
-        if card.speed:
-            real_image.blit(get_speed_image(card.speed), SPEED_COORD)
         
         return real_image
     else:
         return card_back_image
 
-def get_choice_image(choice:TCG.Choice):
-    if choice.image:
-        if choice.image in choice_image_dict:
-            return choice_image_dict[choice.image]
+def get_button_image(button:TCG.Button):
+    if button.image:
+        if button.image in choice_image_dict:
+            return choice_image_dict[button.image]
         else:
             try:
-                choice_image_dict[choice.image] = pg.image.load(choice.image)
+                choice_image_dict[button.image] = pg.image.load(button.image)
             except FileNotFoundError:
-                choice_image_dict[choice.image] = choice_image_dict['default']
-        return choice_image_dict[choice.image]
+                choice_image_dict[button.image] = choice_image_dict['default']
+        return choice_image_dict[button.image]
     else:
         return choice_image_dict['default']
 
@@ -305,36 +309,55 @@ def screen_generator():
         gamecomponents[player2.hand] = SURF.blit(hand_img, hand2_center, area=(0, 0, CARD_SIZE[0] + 20*player2.hand.length, ZONE_SIZE[1]))
         gamecomponents['endbutton'] = SURF.blit(end_button, end_button_rv)
 
+    def card_generator(card, rv:list[int]|tuple[int, int], reversed:bool, i:int=0, margin:int=4):
+        card_surface = get_card_image(card)
+        is_turned = False
+        if card.time:
+            card_surface = pg.transform.rotate(get_card_image(card), 90*(card.time - 2))
+            is_turned = True if card.time%2 else False
+        dir = -1 if reversed else 1
+
+        if reversed:
+            card_surface = pg.transform.flip(card_surface, True, True)
+        gamecomponents[card] = SURF.blit(card_surface,
+                                            (card_on_zone(rv, is_turned)[0], card_on_zone(rv, is_turned)[1] + i*dir*margin))
+
     def pack_generator(pack:TCG.Pack, reversed=True):
-        def card_generator(card, rv:list[int]|tuple[int, int], reversed:bool, i:int, margin:int=4):
-            card_surface = get_card_image(card)
-            dir = -1 if reversed else 1
-            if reversed:
-                card_surface = pg.transform.flip(card_surface, True, True)
-            gamecomponents[card] = SURF.blit(card_surface,
-                                             (card_on_zone(rv)[0], card_on_zone(rv)[1] + dir*margin*i))
-        
         def choice_generator(card:TCG.Card):
-            if choices := [choice for choice in board.current_player.available_choices
+            if choices := [choice for choice in board.active_choices
                            if choice.effect.bind_to == card and choice.is_button]:
                 choice_rv = (gamecomponents[card].left + 2, gamecomponents[card].top + 80)
                 margin = 85//(len(choices) + 1)
                 for i, choice in enumerate(choices):
-                    gamecomponents[choice] = SURF.blit(get_choice_image(choice),
+                    gamecomponents[choice] = SURF.blit(get_button_image(choice),
                                                        (choice_rv[0] + (i+1)*margin - 12, choice_rv[1]))
 
+        topcard = None
         for i, card in enumerate(pack._cards):
             if board.holding != card:
                 card_generator(card, gamecomponents[pack].topleft, reversed, i)
-        if board.holding != card:
+            topcard = card
+        if topcard and board.holding != topcard:
             choice_generator(card)
+
+    def info_generator():
+        if player2.total_power is not None:
+            SURF.blit(
+                TOTAL_POWER_FONT.render(str(player2.total_power), True, DARK_RED),
+                total_power_2_pos
+            )
+        if player1.total_power is not None:
+            SURF.blit(
+                TOTAL_POWER_FONT.render(str(player1.total_power), True, DARK_BLUE),
+                total_power_1_pos
+            )
 
     def explanation_generator():
         explanation = ['', '', None]
 
         def get_card_explanation(card:TCG.Card):
             title = card.name if card.name else 'Sample Card'
-            discription = card.discription if card.discription else 'A dummy card for test.'
+            discription = card.description if card.description else 'A dummy card for test.'
             img = get_card_image(card)
             return [title, discription, img]
 
@@ -395,35 +418,40 @@ def screen_generator():
     # ROW2
     pack_generator(player2.deck)
     for subzone in player2.subzones:
-        pack_generator(subzone, reversed=True)
+        if subzone.card:
+            card_generator(subzone.card, gamecomponents[subzone].center, reversed=True)
     # ROW3
     pack_generator(player2.graveyard, reversed=True)
     for mainzone in player2.mainzones:
-        pack_generator(mainzone, reversed=True)
+        if mainzone.card:
+            card_generator(mainzone.card, gamecomponents[mainzone].center, reversed=True)
     # ROW5
     for subzone in player1.subzones:
-        pack_generator(subzone, reversed=True)
+        if subzone.card:
+            card_generator(subzone.card, gamecomponents[subzone].center, reversed=True)
     pack_generator(player1.deck)
     # ROW4
     for mainzone in player1.mainzones:
-        pack_generator(mainzone, reversed=True)
+        if mainzone.card:
+            card_generator(mainzone.card, gamecomponents[mainzone].center, reversed=True)
     pack_generator(player1.graveyard, reversed=True)
     # HAND
     for i, card in enumerate(player1.hand._cards):
         if board.holding != card:
             gamecomponents[card] = SURF.blit(get_card_image(card),
-                                             (card_on_zone(hand1_center)[0] - len(player1.hand._cards) + i*20, card_on_zone(hand1_center)[1])
+                                             (card_on_zone(hand1_center, False)[0] - len(player1.hand._cards) + i*20, card_on_zone(hand1_center, False)[1])
                                             )
     for i, card in enumerate(player2.hand._cards):
         if board.holding != card:
             gamecomponents[card] = SURF.blit(pg.transform.flip(card_back_image, True, True),
-                                             (card_on_zone(hand2_center)[0] - len(player2.hand._cards) + i*20, card_on_zone(hand2_center)[1])
+                                             (card_on_zone(hand2_center, False)[0] - len(player2.hand._cards) + i*20, card_on_zone(hand2_center, False)[1])
                                             )
     if isinstance(board.holding, TCG.Card):
         gamecomponents[board.holding] = SURF.blit(
             get_card_image(board.holding) if isinstance(board.holding, TCG.Card) else card_back_image,
             tuple(sum(elem) for elem in zip(pg.mouse.get_pos(), (-50, -70)))
             )
+    info_generator()
     explanation_generator()
 
 
