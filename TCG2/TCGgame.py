@@ -97,8 +97,12 @@ ZONE_HEIGHT_FIX = (ROW_HEIGHT - ZONE_SIZE[1])//2
 if ZONE_HEIGHT_FIX < 0:
     ZONE_HEIGHT_FIX = 0
 
-def card_on_zone(zone_pos, is_turned:bool):
-    return [zone_pos[0] - CARD_SIZE[0]//2, zone_pos[1] - CARD_SIZE[1]//2]
+def card_on_zone(zone_center_pos, is_turned:bool=False):
+    '''zone center pos -> rv (topleft)'''
+    if is_turned:
+        return [zone_center_pos[0] - CARD_SIZE[1]//2, zone_center_pos[1] - CARD_SIZE[0]//2]
+    else:
+        return [zone_center_pos[0] - CARD_SIZE[0]//2, zone_center_pos[1] - CARD_SIZE[1]//2]
 
 ROW_WIDTH = HALFBOARD_WIDTH - ZONE_SIZE[0]*2
 MARGINE_BETWEEN_ZONES = 60
@@ -212,8 +216,16 @@ clicking = []
 unclicking = []
 making_subzone = 0
 
+def is_card_revealed(card:TCG.Card):
+    if isinstance(card.location, TCG.Deck):
+        return False
+    elif isinstance(card.location, TCG.Hand) and board.opponent() is card.location.halfboard:
+        return False
+    else:
+        return True
+
 def get_card_image(card:TCG.Card):
-    if card.on_face:
+    if is_card_revealed(card):
         # Use premade image for background
         if type(card) not in card_image_dict:
             # Make one.
@@ -271,7 +283,7 @@ def get_hovering_priority(hovering:list[TCG.GameComponent|TCG.Choice|str]) -> TC
     elif 'endbutton' in hovering:
         return 'endbutton'
     else:
-        cards = [key for key in hovering if isinstance(key, TCG.Card) and key != board.holding and key.on_face]
+        cards = [key for key in hovering if isinstance(key, TCG.Card) and key != board.holding and key.is_active]
         if cards:
             return cards.pop()
         for type in priority_order:
@@ -305,40 +317,51 @@ def screen_generator():
         gamecomponents[player2.subzones[0]] = SURF.blit(subzone_surface, sz2_1_rv)
         gamecomponents[player2.subzones[1]] = SURF.blit(subzone_surface, sz2_2_rv)
         gamecomponents[player2.subzones[2]] = SURF.blit(subzone_surface, sz2_3_rv)
-        gamecomponents[player1.hand] = SURF.blit(hand_img, hand1_center, area=(0, 0, CARD_SIZE[0] + 20*player1.hand.length, ZONE_SIZE[1]))
-        gamecomponents[player2.hand] = SURF.blit(hand_img, hand2_center, area=(0, 0, CARD_SIZE[0] + 20*player2.hand.length, ZONE_SIZE[1]))
+        gamecomponents[player1.hand] = SURF.blit(hand_img, card_on_zone(hand1_center), area=(0, 0, CARD_SIZE[0] + 20*(player1.hand.length - 1), ZONE_SIZE[1]))
+        gamecomponents[player2.hand] = SURF.blit(hand_img, card_on_zone(hand2_center), area=(0, 0, CARD_SIZE[0] + 20*player2.hand.length, ZONE_SIZE[1]))
         gamecomponents['endbutton'] = SURF.blit(end_button, end_button_rv)
 
-    def card_generator(card, rv:list[int]|tuple[int, int], reversed:bool, i:int=0, margin:int=4):
+    def card_generator(card:TCG.Card, rv:list[int]|tuple[int, int], reversed:bool, i:int=0, margin:int=4):
+        '''rv: center!'''
+        if board.holding is card:
+            return False
+        
         card_surface = get_card_image(card)
         is_turned = False
         if card.time:
             card_surface = pg.transform.rotate(get_card_image(card), 90*(card.time - 2))
             is_turned = True if card.time%2 else False
-        dir = -1 if reversed else 1
 
         if reversed:
             card_surface = pg.transform.flip(card_surface, True, True)
-        gamecomponents[card] = SURF.blit(card_surface,
-                                            (card_on_zone(rv, is_turned)[0], card_on_zone(rv, is_turned)[1] + i*dir*margin))
-
+        
+        gamecomponents[card] = SURF.blit(card_surface, (card_on_zone(rv, is_turned)[0], card_on_zone(rv, is_turned)[1] - i*margin))
+        return True
+    
     def pack_generator(pack:TCG.Pack, reversed=True):
-        def choice_generator(card:TCG.Card):
-            if choices := [choice for choice in board.active_choices
-                           if choice.effect.bind_to == card and choice.is_button]:
-                choice_rv = (gamecomponents[card].left + 2, gamecomponents[card].top + 80)
-                margin = 85//(len(choices) + 1)
-                for i, choice in enumerate(choices):
-                    gamecomponents[choice] = SURF.blit(get_button_image(choice),
-                                                       (choice_rv[0] + (i+1)*margin - 12, choice_rv[1]))
-
-        topcard = None
-        for i, card in enumerate(pack._cards):
-            if board.holding != card:
-                card_generator(card, gamecomponents[pack].topleft, reversed, i)
-            topcard = card
-        if topcard and board.holding != topcard:
-            choice_generator(card)
+        i = 0
+        for card in pack._cards:
+            if card_generator(card, gamecomponents[pack].center, reversed, i):
+                i += 1
+    
+    def choice_generator():
+        buttondict:dict[TCG.GameComponent, list[TCG.Button]] = {}
+        # Find all active buttons
+        for choice in board.active_choices:
+            for drop in choice.drops:
+                if isinstance(drop, TCG.Card):
+                    pass
+                elif isinstance(drop, TCG.Button):
+                    if drop.bind_to in buttondict:
+                        buttondict[drop.bind_to].append(drop)
+                    else:
+                        buttondict[drop.bind_to] = [drop]
+        # Generate buttons
+        for place, buttons in buttondict.items():
+            button_rv = (gamecomponents[place].left + 2, gamecomponents[place].top + 80)
+            margin = 85//(len(buttons) + 1)
+            for i, button in enumerate(buttons):
+                gamecomponents[button] = SURF.blit(get_button_image(button), (button_rv[0] + (i+1)*margin - 12, button_rv[1]))
 
     def info_generator():
         if player2.total_power is not None:
@@ -439,24 +462,25 @@ def screen_generator():
     for i, card in enumerate(player1.hand._cards):
         if board.holding != card:
             gamecomponents[card] = SURF.blit(get_card_image(card),
-                                             (card_on_zone(hand1_center, False)[0] - len(player1.hand._cards) + i*20, card_on_zone(hand1_center, False)[1])
+                                             (card_on_zone(hand1_center)[0] - len(player1.hand._cards) + i*20, card_on_zone(hand1_center, False)[1])
                                             )
     for i, card in enumerate(player2.hand._cards):
         if board.holding != card:
             gamecomponents[card] = SURF.blit(pg.transform.flip(card_back_image, True, True),
-                                             (card_on_zone(hand2_center, False)[0] - len(player2.hand._cards) + i*20, card_on_zone(hand2_center, False)[1])
+                                             (card_on_zone(hand2_center)[0] - len(player2.hand._cards) + i*20, card_on_zone(hand2_center, False)[1])
                                             )
     if isinstance(board.holding, TCG.Card):
         gamecomponents[board.holding] = SURF.blit(
             get_card_image(board.holding) if isinstance(board.holding, TCG.Card) else card_back_image,
             tuple(sum(elem) for elem in zip(pg.mouse.get_pos(), (-50, -70)))
             )
+    choice_generator()
     info_generator()
     explanation_generator()
 
 
 # Start
-gameplay = board.play()
+gameplay = board.IO()
 next(gameplay)
 refresh = True
 
@@ -481,7 +505,7 @@ while refresh:
             hovering = []
             for key in gamecomponents:
                 if gamecomponents[key].collidepoint(pg.mouse.get_pos()):
-                    #Sprint(f'you are on {key}.')
+                    #print(f'you are on {key}.')
                     hovering.append(key)
 
         if event.type == pg.MOUSEBUTTONDOWN:
@@ -507,18 +531,17 @@ while refresh:
                     if gamecomponents[key].collidepoint(pg.mouse.get_pos()):
                         #print(f'you unclicked {key}.')
                         keys.append(key)
-                if board.holding:
-                    try:
-                        ans = calculate(('drop', keys))
-                        if ans == False:
-                            raise Exception('Something went Wrong')
-                        elif isinstance(ans, str):
-                            if ans == 'end!':
-                                raise EndException()
-                            else:
-                                raise Exception(ans)
-                    except EndException:
-                        refresh = False
+                try:
+                    ans = calculate(('drop', keys))
+                    if ans == False:
+                        raise Exception('Something went Wrong')
+                    elif isinstance(ans, str):
+                        if ans == 'end!':
+                            raise EndException()
+                        else:
+                            raise Exception(ans)
+                except EndException:
+                    refresh = False
 
     screen_generator()
     pg.display.update()
