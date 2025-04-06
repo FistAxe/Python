@@ -1,4 +1,5 @@
 from typing import Literal, Generator, Sequence
+from random import shuffle
 
 class GameComponent:
     _name: str = 'GameComponent'
@@ -23,17 +24,26 @@ class GameComponent:
         
 class BoundComponent:
     bind_to: GameComponent
+    _name = 'BoundComponent'
 
-    def __init__(self, bind_to:GameComponent) -> None:
+    def __init__(self, bind_to:GameComponent, name:str|None=None) -> None:
         self.bind_to = bind_to
+        if name:
+            self._name = name
+
+    @property
+    def name(self):
+        return self._name
 
     @property
     def board(self):
         return self.bind_to.board
 
 class Effect(BoundComponent):
-    def __init__(self, bind_to: GameComponent) -> None:
-        super().__init__(bind_to)
+    _name = 'Effect'
+
+    def __init__(self, bind_to: GameComponent, name:str|None=None) -> None:
+        super().__init__(bind_to, name)
         self.choice:'Choice|None' = None
 
     def is_running(self):
@@ -49,14 +59,17 @@ class Effect(BoundComponent):
     
     def initialize(self):
         self.choice = None
-        if self.is_running():
-            self.board.running = None
+        if self.in_que():
+            self.board.event_que.remove(self)
     
     # region    Conditions
     def basic_condition(self):
         '''is_active and current_turn'''
         return self.is_active() and self.current_turn()
     
+    def in_que(self):
+        return True if self in self.board.event_que else False
+
     def is_active(self):
         if isinstance(self.bind_to, Card):
             return True if self.bind_to.is_active else False
@@ -71,16 +84,28 @@ class Effect(BoundComponent):
     # endregion
 
 class TriggerEffect(Effect):
-    def trigger(self) -> bool:
+    def __init__(self, bind_to: GameComponent) -> None:
+        super().__init__(bind_to)
+        self.triggered: bool = False
+
+    def trigger(self, phase:Literal['Start']|None=None) -> bool:
         raise NotImplementedError
+    
+    def initialize(self):
+        self.triggered = False
+        super().initialize()
+
+class ChainEffect(TriggerEffect):
+    pass
 
 class Choice:
     typ: Literal['Click', 'Drag', 'Button']
 
-    def __init__(self, effect: Effect, typ:Literal['Click', 'Drag', 'Button'],
+    def __init__(self, effect: Effect, typ:Literal['Click', 'Drag', 'Button'], target_typ:Literal['Location', 'Locations', 'Card', 'Cards'],
                  drops:Sequence[GameComponent], clicks:Sequence[GameComponent]|None=None) -> None:
         self.effect = effect
         self.typ = typ
+        self.target_typ = target_typ
         self.drops = drops
         if typ == 'Click':
             if clicks:
@@ -100,7 +125,11 @@ class Choice:
         else:
             raise Exception('Not a right Choice type!')
 
-        self.selected = []
+        self.selected = None
+
+    @property
+    def name(self):
+        return f"{self.effect.name}'s {self.typ} {self.target_typ} choice"
 
     def match(self, input_click:Sequence[GameComponent], input_drop:Sequence[GameComponent]):
         matching_clicks = set(input_click) & set(self.clicks)
@@ -114,14 +143,25 @@ class Choice:
             if not matching_drops:
                 return False
             if self.typ == 'Drag':
-                self.selected = [matching_clicks, matching_drops]
+                self.selected = matching_clicks.pop()
             elif self.typ == 'Button':
-                self.selected = matching_drops
+                self.selected = matching_drops.pop()
+        
         if self.selected:
-            print(f'{self.selected}')
-        return True if self.selected else False
+            if self.target_typ == 'Card' and isinstance(self.selected, Card):
+                pass
+            elif self.target_typ == 'Location' and not isinstance(self.selected, Card):
+                pass
+            else:
+                return False
+            print(f'{self.selected.name} selected in {self.name}')
+            return True
+        else:
+            return False
 
 class Button(GameComponent, BoundComponent):
+    _name = 'Button'
+
     def __init__(self, image, bind_to:GameComponent) -> None:
         self.bind_to = bind_to
         self.image = image
@@ -131,8 +171,25 @@ class Actions:
     def move(card:'Card', location:'Zone|Pack'):
         card.location = location
 
+    @staticmethod
+    def destroy(card:'Card'):
+        if isinstance(card.location, Graveyard):
+            raise NeutralizedException
+        else:
+            Actions.move(card, card.owner.graveyard)
+
+    @staticmethod
+    def burst(player:'HalfBoard'):
+        player.has_burst_chance = False
+        player.board.in_burst = True
+
+    @staticmethod
+    def shuffle(deck:'Deck'):
+        shuffle(deck.cards)
+
 class Card(GameComponent):
-    def __init__(self, owner:'HalfBoard', name:str, color:Literal['R', 'Y', 'B']|None, power=None, image=None, description=None) -> None:
+    def __init__(self, owner:'HalfBoard', name:str, color:Literal['R', 'Y', 'B']|None, power=None,
+                 time:Literal[1, 2, 3, 4]|None=None, image=None, description=None):
         super().__init__(owner)
         self.owner = owner
         self._name = name
@@ -141,7 +198,8 @@ class Card(GameComponent):
         self._location: 'Zone|Pack' = self.owner.deck
         self._image = image
         self._description = description
-        self.time: Literal[1, 2, 3, 4]|None = None
+        self._time:int|None = time
+        self._time_modifier:int = 0
 
     @property
     def name(self):
@@ -177,6 +235,30 @@ class Card(GameComponent):
             self._location.add(self)
 
     @property
+    def time(self):
+        if isinstance(self.location, Zone):
+            if not self._time:
+                return None
+            
+            time = self._time + self._time_modifier
+            if time > 4:
+                raise GameException('Time larger than 4!')
+            else:
+                return time
+        else:
+            return None
+        
+    @time.setter
+    def time(self, value:int):
+        if not self._time:
+            raise GameException
+        
+        if value > 4:
+            self._time_modifier = 4 - self._time
+        else:
+            self._time_modifier = value - self._time
+
+    @property
     def image(self):
         return self._image if self.is_active else None
     
@@ -186,15 +268,22 @@ class Card(GameComponent):
 
     @property
     def is_active(self):
-        if isinstance(self.location, Zone):
+        if isinstance(self.location, Zone) or isinstance(self.location, Hand):
             return True
-        elif isinstance(self.location, Deck) or isinstance(self.location, Hand):
+        elif isinstance(self.location, Deck):
             return False
         elif isinstance(self.location, Graveyard):
             return True if self.location.top() is self else False
 
+    def initialize(self):
+        self.time_modifier = 0
+        if isinstance(self.location, Zone) and self._time:
+            self.time = self._time
+
 class Creature(Card):
-    pass
+    def __init__(self, owner:'HalfBoard', name:str, color:Literal['R', 'Y', 'B']|None, power:int,
+                 time:Literal[1, 2, 3, 4], image=None, description=None):
+        super().__init__(owner, name, color, power, time, image, description)
 
 class Spell(Card):
     pass
@@ -218,6 +307,7 @@ class Pack(GameComponent):
     
     def append(self, card:Card):
         self._cards.append(card)
+        card.initialize()
 
     def remove(self, card:Card):
         self._cards.remove(card)
@@ -233,10 +323,10 @@ class Zone(GameComponent):
                 return False
             
             if self.is_running() and self.card and self.card.location is self.bind_to.halfboard.hand:
-                if isinstance(self.bind_to, SubZone):
-                    self.bind_to.halfboard.has_bursted = True
+                if isinstance(self.bind_to, SubZone) and not self.board.in_burst:
+                    Actions.burst(self.bind_to.halfboard)
+                    return True
                 Actions.move(self.card, self.bind_to)
-                
                 self.initialize()
                 return False
             
@@ -245,9 +335,17 @@ class Zone(GameComponent):
                 self.choice = None
                 return True
             
-            else:
-                self.choice = Choice(self, 'Drag', [self.bind_to], self.get_lettable_cards())
+            elif isinstance(self.bind_to, SubZone) and not self.bind_to.halfboard.has_burst_chance:
+                self.choice = None
                 return False
+            
+            else:
+                self.choice = Choice(self, 'Drag', 'Card', [self.bind_to], self.get_lettable_cards())
+                return False
+            
+        def initialize(self):
+            self.card = None
+            super().initialize()
             
         def get_lettable_cards(self):
             return self.bind_to.halfboard.hand.cards
@@ -277,6 +375,7 @@ class Zone(GameComponent):
             raise Exception('There is another card in the Zone!')
         else:
             self.card = card
+            self.card.initialize()
 
     def empty(self):
         self.card = None
@@ -285,7 +384,31 @@ class MainZone(Zone):
     pass
 
 class SubZone(Zone):
-    pass
+    class Let(Zone.Let):
+        card:Card|None=None
+        bind_to: 'SubZone'
+
+        def process(self):
+            if not self.basic_condition() or not (self.board.in_burst or self.bind_to.halfboard.has_burst_chance):
+                self.initialize()
+                return False
+            
+            if self.is_running() and self.card and self.card.location is self.bind_to.halfboard.hand:
+                if not self.board.in_burst:
+                    Actions.burst(self.bind_to.halfboard)
+                    return True
+                Actions.move(self.card, self.bind_to)
+                self.initialize()
+                return False
+            
+            elif self.choice and isinstance(self.choice.selected, Card):
+                self.card = self.choice.selected
+                self.choice = None
+                return True
+
+            else:
+                self.choice = Choice(self, 'Drag', 'Card', [self.bind_to], self.get_lettable_cards())
+                return False
 
 class Deck(Pack):
     class Draw(Effect):
@@ -298,25 +421,33 @@ class Deck(Pack):
                 return False
 
             if self.is_running() and self.selected is True:
-                drawcard = self.bind_to.top()
-                if not drawcard:
-                    self.board.loser = self.bind_to.halfboard
-                    raise self.board.End
-                else:
-                    Actions.move(drawcard, self.bind_to.halfboard.hand)
+                try:
+                    Actions.move(self.bind_to.top(), self.bind_to.halfboard.hand)
+                    self.board.in_burst = False
+                    self.bind_to.halfboard.has_burst_chance = False
                     self.initialize()
                     return False
+                
+                except NoCardException:
+                    self.board.loser = self.bind_to.halfboard
+                    raise EndException
             
             elif self.choice and self.choice.selected:
                 self.selected = True
                 self.choice = None
                 return True
 
-            elif not self.bind_to.halfboard.has_bursted:
-                self.choice = Choice(self, 'Click', [self.bind_to])
+            elif self.bind_to.halfboard.has_burst_chance:
+                self.choice = Choice(self, 'Click', 'Location', [self.bind_to])
                 return False
             
-            return False
+            else:
+                self.initialize()
+                return False
+            
+        def initialize(self):
+            self.selected = False
+            super().initialize()
         
     def __init__(self, halfboard: 'HalfBoard') -> None:
         super().__init__(halfboard)
@@ -326,7 +457,10 @@ class Deck(Pack):
         try:
             return self.cards[0]
         except IndexError:
-            return None
+            raise NoCardException
+        
+    def append(self, card: Card):
+        super().append(card)
 
 class Graveyard(Pack):
     def top(self):
@@ -334,16 +468,45 @@ class Graveyard(Pack):
             return self.cards[0]
         except IndexError:
             return None
+        
+    def append(self, card: Card):
+        super().append(card)
 
 class Hand(Pack):
     def __init__(self, halfboard:'HalfBoard') -> None:
         super().__init__(halfboard)
 
 class HalfBoard(GameComponent):
-    class BurstEndEffect(TriggerEffect):
+    class Decay(TriggerEffect):
         bind_to: 'HalfBoard'
-        def trigger(self):
-            return True if isinstance(self.board.running, Deck.Draw) and self.board.bursted else False
+        zones: list[Zone]|None = None
+
+        def trigger(self, phase) -> bool:
+            if not self.in_que() and isinstance(self.board.running, Deck.Draw) and self.bind_to is self.board.current_player:
+                return True
+            else:
+                return False
+            
+        def process(self) -> bool:
+            if self.is_running():
+                if not self.zones:
+                    self.zones = [zone for zone in self.bind_to.zones]
+                
+                while self.zones:
+                    zone = self.zones.pop(0)
+                    if zone.card and zone.card.time:
+                        zone.card.time -= 1
+                        return True
+
+                self.initialize()
+                return False
+            else:
+                self.initialize()
+                return False
+
+        def initialize(self):
+            self.zones = None
+            super().initialize()
 
     def __init__(self, name:str) -> None:
         self._name = name
@@ -361,10 +524,10 @@ class HalfBoard(GameComponent):
             SubZone(self)
         ]
         self.zones = self.mainzones + self.subzones
-        self.effects = [self.BurstEndEffect(self)]
+        self.effects = [self.Decay(self)]
 
         self._bursted:bool = False
-        self.has_bursted:bool = False
+        self.has_burst_chance:bool = False
 
     @property
     def halfboard(self):
@@ -382,10 +545,29 @@ class HalfBoard(GameComponent):
         return sum([zone.power for zone in self.zones])
 
 class Board(GameComponent):
-    class End(Exception):
-        pass
-
+    class BurstEnd(ChainEffect):
+        bind_to: 'Board'
+        def trigger(self, phase):
+            if not self.in_que() and isinstance(self.board.running, Deck.Draw) and self.board.in_burst:
+                return True
+            else:
+                return False
+        
+        def process(self):
+            if self.is_running():
+                for subzone in [subzone for player in self.bind_to.players for subzone in player.subzones]:
+                    if subzone.card:
+                        Actions.destroy(subzone.card)
+                        return True
+                self.board.in_burst = False
+                self.initialize()
+                return False
+            else:
+                return False
+    
     def __init__(self, player1:HalfBoard, player2:HalfBoard) -> None:
+        self.effects = [self.BurstEnd(self)]
+
         self.player1 = player1
         self.player2 = player2
         self.player1._parent = self
@@ -394,7 +576,7 @@ class Board(GameComponent):
         self.holding:Card|Button|None = None
         self.loser: HalfBoard|None = None
         self.turn:int = 0   # odd for 1, even for 2
-        self._bursted:bool = False
+        self.in_burst:bool = False
 
         self.running: Effect|None = None
         self.event_que: list[Effect] = []
@@ -423,19 +605,6 @@ class Board(GameComponent):
     def gamecomponents(self) -> list[GameComponent]:
         return [self] + self.current_player.gamecomponents + self.opponent().gamecomponents
 
-    @property
-    def bursted(self):
-        return self._bursted
-    
-    @bursted.setter
-    def bursted(self, boolean:bool):
-        if self.bursted is False and boolean is True:
-            self._bursted = True
-        elif self.bursted is True and boolean is False:
-            self._bursted = False
-        else:
-            return None
-
     def opponent(self, player:HalfBoard|None=None):
         if player:
             return self.player1 if player is self.player2 else self.player2
@@ -459,20 +628,34 @@ class Board(GameComponent):
                 elif idle_effect.choice:
                     self.active_choices.append(idle_effect.choice)
 
-    def check_trigger_effects(self):
+    def check_trigger_effects(self, phase:Literal['Start']|None=None):
+        chains = []
         for gc in self.gamecomponents:
             for trigger_effect in [eff for eff in gc.effects if isinstance(eff, TriggerEffect)]:
-                if trigger_effect.trigger():
-                    self.event_que.append(trigger_effect)
+                if trigger_effect.trigger(phase):
+                    if isinstance(trigger_effect, ChainEffect):
+                        chains.append(trigger_effect)
+                    else:
+                        self.event_que.append(trigger_effect)
+        self.event_que = chains + self.event_que
 
     def play(self):
         try:
             #Init
+            for player in self.players:
+                Actions.shuffle(player.deck)
+                for _ in range(5):
+                    try:
+                        Actions.move(player.deck.top(), player.hand)
+                    except NoCardException:
+                        self.loser = player
+                        raise EndException
+            
             while True:
                 #Turn Start
                 self.turn += 1
-                self.current_player.has_bursted = False
-                self.check_trigger_effects()
+                self.current_player.has_burst_chance = True
+                self.check_trigger_effects('Start')
 
                 # Power check
                 while self.current_player.total_power <= self.opponent().total_power:
@@ -486,55 +669,64 @@ class Board(GameComponent):
                                     self.event_que.append(self.selected_choice.effect)
                                 self.selected_choice = None
                             else:
-                                raise Exception('input loop break without appropriate input!')
+                                raise GameException('input loop break without appropriate input!')
                         self.active_choices.clear()
                     # Automatic
                     while self.event_que:
                         self.running = self.event_que[0]
                         self.check_trigger_effects()
                         if self.event_que[0] is self.running:
-                            while self.running:
-                                self.running.process()
+                            while self.running.process():
                                 if self.running and self.running.choice:
                                     yield
-                            self.event_que.pop(0)
                         else:
                             continue
                     
                     self.running = None
 
-        except self.End:
-            yield 'end!'
+        except EndException as end:
+            raise end
 
-    def IO(self) -> Generator[Literal['end!']|None, tuple[Literal['click', 'drop', 'rightclick'], list[GameComponent]], None]:
-        while not self.loser:
-            result = next(self.game)
-            if result:
-                continue
-            else:
+    def IO(self) -> Generator['EndException|None', tuple[Literal['click', 'drop', 'rightclick'], list[GameComponent]], None]:
+        try:
+            while True:
+                result = next(self.game)
                 print('waiting for the message...')
 
-            while not self.selected_choice:
-                print(f"Choices: {self.active_choices}")
-                click = drop = None
-                msgtype, msgkeys = yield
-                if msgtype != 'click':
-                    continue
-                else:
-                    click = msgkeys
-                    self.holding = self.find_holding(msgkeys)
-                msgtype, msgkeys = yield
-                if msgtype != 'drop':
-                    continue
-                else:
-                    drop = msgkeys
-                    self.holding = None
-                    
-                for choice in self.active_choices:
-                    if choice.match(click, drop):
-                        self.selected_choice = choice
-                        break
-                else:
-                    print('No matching choice.')
+                while not self.selected_choice:
+                    print(f"Choices: {[choice.name for choice in self.active_choices]}")
+                    click = drop = None
+                    msgtype, msgkeys = yield
+                    if msgtype != 'click':
+                        continue
+                    else:
+                        click = msgkeys
+                        self.holding = self.find_holding(msgkeys)
+                    msgtype, msgkeys = yield
+                    if msgtype != 'drop':
+                        continue
+                    else:
+                        drop = msgkeys
+                        self.holding = None
+                        
+                    for choice in self.active_choices:
+                        if choice.match(click, drop):
+                            self.selected_choice = choice
+                            break
+                    else:
+                        print('No matching choice.')
 
-        yield 'end!'
+        except EndException as end:
+            yield end
+
+class GameException(Exception):
+    pass
+
+class EndException(GameException):
+    pass
+
+class NoCardException(GameException):
+    pass
+
+class NeutralizedException(GameException):
+    pass

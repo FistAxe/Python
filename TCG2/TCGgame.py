@@ -6,11 +6,12 @@ from typing import Union, Literal
 
 pg.init()
 
-# Screen Size
+# region Screen Size
 WIDTH = 1280
 HEIGHT = 768
+# endregion
 
-# Color Definition
+# region Color
 WHITE = pg.Color(255, 255, 255)
 BLACK = pg.Color(0, 0, 0)
 DARK_BLUE = pg.Color(50, 50, 100)
@@ -18,6 +19,7 @@ DARK_RED = pg.Color(100, 50, 50)
 BOARD_BG = pg.Color(230, 230, 255)
 ROW_BG = pg.Color(200, 200, 255)
 GY_BG = pg.Color(200, 200, 200)
+# endregion
 
 # Screen Init
 SURF = pg.display.set_mode((WIDTH, HEIGHT))
@@ -27,7 +29,7 @@ SURF.fill(WHITE)
 FPS = pg.time.Clock()
 FPS.tick(60)
 
-# Layout Definition
+# region Layout
 RIGHT_MARGINE = 500
 BOARD_MARGIN = 5
 LINE_WIDTH = 3
@@ -43,20 +45,16 @@ ROW_I = ROW3 + ROW_HEIGHT
 ROW4 = ROW_I + INDICATOR_HEIGHT
 ROW5 = ROW4 + ROW_HEIGHT
 ROW6 = ROW5 + ROW_HEIGHT
+# endregion
 
-# Card Definition
+# region Card
 CARD_SIZE = [75, 105]
 CARD_NAME_HEIGHT = 12
 card_back_image = pg.image.load('./images/card_back.png').convert()
 card_front_image = pg.image.load('./images/card_front.png').convert()
-card_front_active = pg.image.load('./images/card_front_active.png').convert()
 card_front_R = pg.image.load('./images/card_front_R.png').convert()
-card_front_R_active = pg.image.load('./images/card_front_R_active.png').convert()
 card_front_Y = pg.image.load('./images/card_front_Y.png').convert()
-card_front_Y_active = pg.image.load('./images/card_front_Y_active.png').convert()
 card_front_B = pg.image.load('./images/card_front_B.png').convert()
-card_front_B_active = pg.image.load('./images/card_front_B_active.png').convert()
-
 
 # Card Fonts
 NAME_FONT = pg.font.SysFont('Gulim', 11)
@@ -64,8 +62,8 @@ POWER_FONT = pg.font.SysFont('Segoe UI Black', 16, italic=True)
 SPEED_FONT = pg.font.SysFont('Verdana', 13, bold=True)
 NAME_COORD = (14, 1)
 IMAGE_COORD = (2, 13)
-POWER_COORD = (4, 98)
-SPEED_COORD = (4, 70)
+POWER_COORD = (4, CARD_SIZE[1] - 20)
+SPEED_COORD = (4, CARD_SIZE[1] - 40)
 power_dict: dict[int, pg.Surface] = {}
 speed_dict: dict[int, pg.Surface] = {}
 speed_dict[1] = SPEED_FONT.render('I', False, BLACK)
@@ -78,6 +76,7 @@ speed_dict[7] = SPEED_FONT.render('VII', False, BLACK)
 speed_dict[8] = SPEED_FONT.render('VIII', False, BLACK)
 speed_dict[9] = SPEED_FONT.render('IX', False, BLACK)
 speed_dict[10] = SPEED_FONT.render('X', False, BLACK)
+# endregion
 
 def get_power_image(power:int):
     if power not in power_dict:
@@ -89,13 +88,14 @@ def get_speed_image(speed:int):
         speed_dict[speed] = SPEED_FONT.render(str(speed), False, BLACK)
     return speed_dict[speed]
 
-# Zone Definition
+# region Zone
 ZONE_MARGIN = 2
 ZONE_SIZE = [CARD_SIZE[0] + 2*ZONE_MARGIN, CARD_SIZE[1] + 2*ZONE_MARGIN]
 SUBZONE_MARGIN = 40
 ZONE_HEIGHT_FIX = (ROW_HEIGHT - ZONE_SIZE[1])//2
 if ZONE_HEIGHT_FIX < 0:
     ZONE_HEIGHT_FIX = 0
+# endregion
 
 def card_on_zone(zone_center_pos, is_turned:bool=False):
     '''zone center pos -> rv (topleft)'''
@@ -104,6 +104,7 @@ def card_on_zone(zone_center_pos, is_turned:bool=False):
     else:
         return [zone_center_pos[0] - CARD_SIZE[0]//2, zone_center_pos[1] - CARD_SIZE[1]//2]
 
+# region Column
 ROW_WIDTH = HALFBOARD_WIDTH - ZONE_SIZE[0]*2
 MARGINE_BETWEEN_ZONES = 60
 COLUMN_LEFT = BOARD_MARGIN
@@ -111,8 +112,12 @@ COLUMN1 = COLUMN_LEFT + ZONE_SIZE[0] + ROW_WIDTH//2 - ZONE_SIZE[0]//2 - MARGINE_
 COLUMN2 = COLUMN_LEFT + ZONE_SIZE[0] + ROW_WIDTH//2 - ZONE_SIZE[0]//2
 COLUMN3 = COLUMN_LEFT + ZONE_SIZE[0] + ROW_WIDTH//2 + ZONE_SIZE[0]//2 + MARGINE_BETWEEN_ZONES
 COLUMN_RIGHT = COLUMN_LEFT + ZONE_SIZE[0] + ROW_WIDTH
+# endregion
 
-# Game Components RectValues & Images
+def get_zonetyp_rv(left:int, top:int):
+    return [left, top + ZONE_HEIGHT_FIX, ZONE_SIZE[0], ZONE_SIZE[1]]
+
+# region Board
 board_rv = [BOARD_MARGIN, ROW2, HALFBOARD_WIDTH, HALFBOARD_HEIGHT*2]
 board_surface = pg.Surface((HALFBOARD_WIDTH, HALFBOARD_HEIGHT*2))
 board_surface.fill(WHITE)
@@ -122,9 +127,6 @@ half2_rv = [BOARD_MARGIN, ROW2, HALFBOARD_WIDTH, HALFBOARD_HEIGHT]
 halfboard_surface = pg.Surface((HALFBOARD_WIDTH, HALFBOARD_HEIGHT))
 halfboard_surface.fill(BOARD_BG)
 pg.draw.rect(halfboard_surface, BLACK, halfboard_surface.get_rect(), LINE_WIDTH)
-
-def get_zonetyp_rv(left:int, top:int):
-    return [left, top + ZONE_HEIGHT_FIX, ZONE_SIZE[0], ZONE_SIZE[1]]
 
 deck1_rv = get_zonetyp_rv(COLUMN_RIGHT, ROW5)
 deck2_rv = get_zonetyp_rv(COLUMN_LEFT, ROW2)
@@ -168,24 +170,27 @@ for x in range(HALFBOARD_WIDTH - 2*ZONE_SIZE[0]):
 
 hand_img = pg.Surface((HALFBOARD_WIDTH, ZONE_SIZE[1]))
 hand_img.fill(WHITE)
-hand1_center = [BOARD_MARGIN + HALFBOARD_WIDTH//2 - ZONE_SIZE[0]//2, ROW6 + ZONE_SIZE[1]//2]
-hand2_center = [BOARD_MARGIN + HALFBOARD_WIDTH//2 - ZONE_SIZE[0]//2, ROW1 + ZONE_SIZE[1]//2]
+hand1_center = [BOARD_MARGIN + HALFBOARD_WIDTH//2, ROW6 + ZONE_SIZE[1]//2]
+hand2_center = [BOARD_MARGIN + HALFBOARD_WIDTH//2, ROW1 + ZONE_SIZE[1]//2]
+# endregion
 
-# Indicator
+# region Indicator
 TOTAL_POWER_FONT = pg.font.SysFont('Gulim', 20, italic=True)
 TOTAL_POWER_DISTANCE = 40
 total_power_2_pos = (BOARD_MARGIN + HALFBOARD_WIDTH//2 - TOTAL_POWER_DISTANCE, ROW_I + INDICATOR_HEIGHT//2 - 10)
 total_power_1_pos = (BOARD_MARGIN + HALFBOARD_WIDTH//2 + TOTAL_POWER_DISTANCE, ROW_I + INDICATOR_HEIGHT//2 - 10)
+# endregion
 
-# Explanation
+# region Explanation
 TITLE_FONT = pg.font.SysFont('Gulim', 40)
 EXP_FONT = pg.font.SysFont('Gulim', 15)
 
 title_pos = (WIDTH - RIGHT_MARGINE + 20, 30)
 exp_pos = (title_pos[0] + 200, 100)
 img_pos = (title_pos[0], 100)
+# endregion
 
-# For Debugging
+# region Endbutton
 END_BUTTON_SIZE = (200, 100)
 END_BUTTON_FONT = pg.font.SysFont('Gulim', 20)
 end_button_rv = [WIDTH - END_BUTTON_SIZE[0] - 50, HEIGHT - END_BUTTON_SIZE[1] - 50, END_BUTTON_SIZE[0], END_BUTTON_SIZE[1]]
@@ -196,10 +201,10 @@ end_button.blit(end_button_label,
                 (END_BUTTON_SIZE[0]//2 - end_button_label.get_width()//2,
                  END_BUTTON_SIZE[1]//2 - end_button_label.get_height()//2)
                 )
-
+# endregion
 
 # real images on the board. May be different from real data.
-gamecomponents: dict[TCG.GameComponent|TCG.Effect|Literal['endbutton'], pg.Rect] = {}
+gamecomponents: dict[TCG.GameComponent|Literal['endbutton'], pg.Rect] = {}
 
 player1 = TCGplayer.player1
 player2 = TCGplayer.player2
@@ -278,9 +283,7 @@ def get_hovering_priority(hovering:list[TCG.GameComponent|TCG.Choice|str]) -> TC
         TCG.HalfBoard,
         TCG.Board
     ]
-    if 'temp zone' in hovering:
-        return 'temp zone'
-    elif 'endbutton' in hovering:
+    if 'endbutton' in hovering:
         return 'endbutton'
     else:
         cards = [key for key in hovering if isinstance(key, TCG.Card) and key != board.holding and key.is_active]
@@ -291,6 +294,58 @@ def get_hovering_priority(hovering:list[TCG.GameComponent|TCG.Choice|str]) -> TC
                 if isinstance(key, type):
                     return key
     return None
+
+def get_keys():
+    def cards_to_card(cards:list[TCG.Card]):
+        carddict:dict[TCG.Pack|TCG.Zone, list[TCG.Card]] = {}
+        sorted_location = []
+        result_card = None
+        for card in cards:
+            if board.holding is card:
+                cards.remove(card)
+                continue
+
+            if card.location not in carddict:
+                carddict[card.location] = []
+            carddict[card.location].append(card)
+
+        for loc in carddict:
+            for loc_type in [TCG.Deck, TCG.Graveyard, TCG.Hand, TCG.Zone]:
+                if isinstance(loc, loc_type):
+                    sorted_location.append(loc)
+                
+        if sorted_location:
+            location = sorted_location[0]
+            if isinstance(location, TCG.Deck):
+                pass
+            elif isinstance(location, TCG.Graveyard):
+                result_card = location.top()
+            elif isinstance(location, TCG.Hand):
+                for c in carddict[location]:
+                    if not result_card:
+                        result_card = c
+                    elif location.cards.index(c) > location.cards.index(result_card):
+                        result_card = c
+            else:
+                result_card = carddict[location].pop()
+
+        return result_card
+
+    keys:list[TCG.GameComponent|TCG.Effect|Literal['endbutton']] = []
+    cards:list[TCG.Card] = []
+    for key in gamecomponents:
+        if gamecomponents[key].collidepoint(pg.mouse.get_pos()):
+            if isinstance(key, TCG.Card):
+                cards.append(key)
+            elif isinstance(key, TCG.Board) or isinstance(key, TCG.HalfBoard):
+                pass
+            else:
+                keys.append(key)
+
+    card = cards_to_card(cards)
+    if card:
+        keys.append(card)
+    return keys
 
 def screen_generator():
     def board_generator():
@@ -321,7 +376,7 @@ def screen_generator():
         gamecomponents[player2.hand] = SURF.blit(hand_img, card_on_zone(hand2_center), area=(0, 0, CARD_SIZE[0] + 20*player2.hand.length, ZONE_SIZE[1]))
         gamecomponents['endbutton'] = SURF.blit(end_button, end_button_rv)
 
-    def card_generator(card:TCG.Card, rv:list[int]|tuple[int, int], reversed:bool, i:int=0, margin:int=4):
+    def card_generator(card:TCG.Card, rv:list[int]|tuple[int, int], reversed:bool):
         '''rv: center!'''
         if board.holding is card:
             return False
@@ -329,20 +384,30 @@ def screen_generator():
         card_surface = get_card_image(card)
         is_turned = False
         if card.time:
-            card_surface = pg.transform.rotate(get_card_image(card), 90*(card.time - 2))
-            is_turned = True if card.time%2 else False
+            if 1 <= card.time <= 4:
+                card_surface = pg.transform.rotate(get_card_image(card), 90*(card.time - 2))
+                is_turned = True if card.time%2 else False
+            else:
+                raise Exception('Time error!')
 
         if reversed:
             card_surface = pg.transform.flip(card_surface, True, True)
         
-        gamecomponents[card] = SURF.blit(card_surface, (card_on_zone(rv, is_turned)[0], card_on_zone(rv, is_turned)[1] - i*margin))
+        gamecomponents[card] = SURF.blit(card_surface, card_on_zone(rv, is_turned))
         return True
     
-    def pack_generator(pack:TCG.Pack, reversed=True):
-        i = 0
-        for card in pack._cards:
-            if card_generator(card, gamecomponents[pack].center, reversed, i):
-                i += 1
+    def pack_generator(pack:TCG.Pack, reversed=False, margin:int=4):
+        rv = list(gamecomponents[pack].center)
+        for card in pack.cards:
+            if card_generator(card, rv, reversed):
+                rv[1] -= margin
+    
+    def hand_generator(hand:TCG.Hand, reversed=False, margin:int = 20):
+        rv = list(gamecomponents[hand].center)
+        rv[0] -= (len(hand.cards) - 1)*margin
+        for card in hand.cards:
+            card_generator(card, rv, reversed)
+            rv[0] += margin
     
     def choice_generator():
         buttondict:dict[TCG.GameComponent, list[TCG.Button]] = {}
@@ -439,7 +504,7 @@ def screen_generator():
     SURF.fill(WHITE)
     board_generator()
     # ROW2
-    pack_generator(player2.deck)
+    pack_generator(player2.deck, reversed=True)
     for subzone in player2.subzones:
         if subzone.card:
             card_generator(subzone.card, gamecomponents[subzone].center, reversed=True)
@@ -451,33 +516,26 @@ def screen_generator():
     # ROW5
     for subzone in player1.subzones:
         if subzone.card:
-            card_generator(subzone.card, gamecomponents[subzone].center, reversed=True)
+            card_generator(subzone.card, gamecomponents[subzone].center, reversed=False)
     pack_generator(player1.deck)
     # ROW4
     for mainzone in player1.mainzones:
         if mainzone.card:
-            card_generator(mainzone.card, gamecomponents[mainzone].center, reversed=True)
-    pack_generator(player1.graveyard, reversed=True)
+            card_generator(mainzone.card, gamecomponents[mainzone].center, reversed=False)
+    pack_generator(player1.graveyard)
     # HAND
-    for i, card in enumerate(player1.hand._cards):
-        if board.holding != card:
-            gamecomponents[card] = SURF.blit(get_card_image(card),
-                                             (card_on_zone(hand1_center)[0] - len(player1.hand._cards) + i*20, card_on_zone(hand1_center, False)[1])
-                                            )
-    for i, card in enumerate(player2.hand._cards):
-        if board.holding != card:
-            gamecomponents[card] = SURF.blit(pg.transform.flip(card_back_image, True, True),
-                                             (card_on_zone(hand2_center)[0] - len(player2.hand._cards) + i*20, card_on_zone(hand2_center, False)[1])
-                                            )
+    hand_generator(player1.hand)
+    hand_generator(player2.hand, reversed=True)
+
     if isinstance(board.holding, TCG.Card):
         gamecomponents[board.holding] = SURF.blit(
             get_card_image(board.holding) if isinstance(board.holding, TCG.Card) else card_back_image,
             tuple(sum(elem) for elem in zip(pg.mouse.get_pos(), (-50, -70)))
             )
+    
     choice_generator()
     info_generator()
     explanation_generator()
-
 
 # Start
 gameplay = board.IO()
@@ -488,9 +546,6 @@ def calculate(message:tuple[Literal['click', 'drop', 'rightclick'], list]):
     return gameplay.send(message)
 
 screen_generator()
-
-class EndException(Exception):
-    pass
 
 while refresh:
     frame_clicking = []
@@ -512,12 +567,7 @@ while refresh:
             if event.button == 3:
                 calculate(('rightclick', []))
             elif not board.holding:
-                keys = []
-                for key in gamecomponents:
-                    if gamecomponents[key].collidepoint(pg.mouse.get_pos()):
-                        #print(f'you clicked {key}.')
-                        keys.append(key)
-                calculate(('click', keys))
+                calculate(('click', get_keys()))
             else:
                 raise Exception('Tryed to click while dragging.')
 
@@ -526,22 +576,10 @@ while refresh:
                 pass
             else:
                 print('unpressed')
-                keys = []
-                for key in gamecomponents:
-                    if gamecomponents[key].collidepoint(pg.mouse.get_pos()):
-                        #print(f'you unclicked {key}.')
-                        keys.append(key)
-                try:
-                    ans = calculate(('drop', keys))
-                    if ans == False:
-                        raise Exception('Something went Wrong')
-                    elif isinstance(ans, str):
-                        if ans == 'end!':
-                            raise EndException()
-                        else:
-                            raise Exception(ans)
-                except EndException:
+                ans = calculate(('drop', get_keys()))
+                if ans:
                     refresh = False
+                    continue
 
     screen_generator()
     pg.display.update()

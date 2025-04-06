@@ -7,6 +7,7 @@ class Bear(TCG.Creature):
             name = 'Bear',
             color = 'Y',
             power = 3,
+            time = 2,
             description = 'Just a bear.',
             image = './images/Bear.png'
             )
