@@ -19,6 +19,10 @@ DARK_RED = pg.Color(100, 50, 50)
 BOARD_BG = pg.Color(230, 230, 255)
 ROW_BG = pg.Color(200, 200, 255)
 GY_BG = pg.Color(200, 200, 200)
+
+MANA_R = pg.Color(255, 50, 50)
+MANA_Y = pg.Color(200, 200, 50)
+MANA_B = pg.Color(50, 50, 255)
 # endregion
 
 # Screen Init
@@ -179,6 +183,20 @@ TOTAL_POWER_FONT = pg.font.SysFont('Gulim', 20, italic=True)
 TOTAL_POWER_DISTANCE = 40
 total_power_2_pos = (BOARD_MARGIN + HALFBOARD_WIDTH//2 - TOTAL_POWER_DISTANCE, ROW_I + INDICATOR_HEIGHT//2 - 10)
 total_power_1_pos = (BOARD_MARGIN + HALFBOARD_WIDTH//2 + TOTAL_POWER_DISTANCE, ROW_I + INDICATOR_HEIGHT//2 - 10)
+
+MANA_ICON_SIZE = 14
+MANA_ICON = {
+    'R': pg.Surface((MANA_ICON_SIZE, MANA_ICON_SIZE), pg.SRCALPHA),
+    'Y': pg.Surface((MANA_ICON_SIZE, MANA_ICON_SIZE), pg.SRCALPHA),
+    'B': pg.Surface((MANA_ICON_SIZE, MANA_ICON_SIZE), pg.SRCALPHA)
+}
+pg.draw.circle(MANA_ICON['R'], MANA_R, (MANA_ICON_SIZE//2, MANA_ICON_SIZE//2), MANA_ICON_SIZE//2)
+pg.draw.circle(MANA_ICON['Y'], MANA_Y, (MANA_ICON_SIZE//2, MANA_ICON_SIZE//2), MANA_ICON_SIZE//2)
+pg.draw.circle(MANA_ICON['B'], MANA_B, (MANA_ICON_SIZE//2, MANA_ICON_SIZE//2), MANA_ICON_SIZE//2)
+
+total_mana_surface = pg.Surface(ZONE_SIZE, pg.SRCALPHA)
+total_mana_1_pos = (COLUMN_LEFT, ROW4 + ZONE_HEIGHT_FIX)
+total_mana_2_pos = (COLUMN_RIGHT, ROW3 + ZONE_HEIGHT_FIX)
 # endregion
 
 # region Explanation
@@ -429,6 +447,25 @@ def screen_generator():
                 gamecomponents[button] = SURF.blit(get_button_image(button), (button_rv[0] + (i+1)*margin - 12, button_rv[1]))
 
     def info_generator():
+        def mana_info_generator(surface:pg.Surface, player:TCG.HalfBoard):
+            color_dict = {k: v for k, v in player.total_mana.items() if v != 0}
+
+            x_interval = 2*MANA_ICON_SIZE
+            x_begin = -2*MANA_ICON_SIZE
+            y_interval = 2*MANA_ICON_SIZE
+            y_begin = -0.5*(len(color_dict) - 1)*y_interval
+
+            if not color_dict:
+                return None
+
+            for i, color in enumerate(color_dict):
+                if color_dict[color] > 0:
+                    for j in range(color_dict[color]):
+                        surface.blit(MANA_ICON[color], 
+                                (surface.get_width()//2 + x_begin + x_interval*j,
+                                surface.get_height()//2 + y_begin + y_interval*i - MANA_ICON_SIZE//2)
+                                )
+            
         if player2.total_power is not None:
             SURF.blit(
                 TOTAL_POWER_FONT.render(str(player2.total_power), True, DARK_RED),
@@ -439,6 +476,14 @@ def screen_generator():
                 TOTAL_POWER_FONT.render(str(player1.total_power), True, DARK_BLUE),
                 total_power_1_pos
             )
+
+        total_mana_1_surface = total_mana_surface.copy()
+        total_mana_2_surface = total_mana_surface.copy()
+        mana_info_generator(total_mana_1_surface, player1)
+        mana_info_generator(total_mana_2_surface, player2)
+        SURF.blit(total_mana_1_surface, total_mana_1_pos)
+        SURF.blit(total_mana_2_surface, total_mana_2_pos)
+
 
     def explanation_generator():
         explanation = ['', '', None]

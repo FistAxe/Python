@@ -56,11 +56,7 @@ class Effect(BoundComponent):
         yield
 
     def process(self):
-        '''
-        True: activated. must be added to the que.\n
-        False: not activated.
-        '''
-        print(f'processing {self}!')
+        '''Set self.event/choice.'''
         if not self._gen:
             self._gen = self.gen()
         try:
@@ -71,7 +67,6 @@ class Effect(BoundComponent):
                 self.choice = result
         except StopIteration:
             self.initialize()
-            return None
 
     def initialize(self):
         self.choice = None
@@ -291,6 +286,7 @@ class Start_Turn(Event):
 
 class Card(GameComponent):
     def __init__(self, owner:'HalfBoard', name:str, color:Literal['R', 'Y', 'B']|None, power=None,
+                 cost:dict[Literal['R', 'Y', 'B'], int]=dict(),
                  time:Literal[1, 2, 3, 4]|None=None, image=None, description=None):
         super().__init__(owner)
         self.owner = owner
@@ -298,6 +294,8 @@ class Card(GameComponent):
         self._color = color
         self._power:int|None = power
         self._power_modifier:int = 0
+        self._cost:dict[Literal['R', 'Y', 'B'], int] = cost
+        self._cost_modifier:dict[Literal['R', 'Y', 'B'], int] = {}
         self._location: 'Zone|Pack' = self.owner.deck
         self._image = image
         self._description = description
@@ -315,6 +313,10 @@ class Card(GameComponent):
     @property
     def power(self):
         return self._power + self._power_modifier if self._power and self.is_active else None
+
+    @property
+    def cost(self):
+        return {k: self._cost[k] + self._cost_modifier[k] for k in self._cost} if self._cost and self.is_active else None
 
     @property
     def location(self):
@@ -385,8 +387,9 @@ class Card(GameComponent):
 
 class Creature(Card):
     def __init__(self, owner:'HalfBoard', name:str, color:Literal['R', 'Y', 'B']|None, power:int,
-                 time:Literal[1, 2, 3, 4], image=None, description=None):
-        super().__init__(owner, name, color, power, time, image, description)
+                 time:Literal[1, 2, 3, 4], cost:dict[Literal['R', 'Y', 'B'], int]=dict(),
+                 image=None, description=None):
+        super().__init__(owner, name, color, power, cost, time, image, description)
 
 class Spell(Card):
     pass
@@ -434,26 +437,32 @@ class Zone(GameComponent):
             self.card = self.choice.selected
             self.choice = None
             self.activated = True
+            yield
             
             while True:
                 if not self.basic_condition() or self.bind_to.card:
                     return None
                     
-                if isinstance(self.bind_to, SubZone) and not self.board.in_burst:
-                    yield Burst(self, self.bind_to.halfboard)
-                elif not self.event:
-                    yield Move(self, self.card, self.bind_to)
-                elif self.event.done:
+                yield Move(self, self.card, self.bind_to)
+                if self.event and self.event.done:
                     return None
-                else:
-                    yield
                         
         def initialize(self):
             self.card = None
             super().initialize()
             
         def get_lettable_cards(self):
-            return self.bind_to.halfboard.hand.cards
+            lettable_cards: list[Card] = []
+            for card in self.bind_to.halfboard.hand.cards:
+                if not card.cost or self.able_to_pay_cost(card.cost):
+                    lettable_cards.append(card)
+            return lettable_cards
+        
+        def able_to_pay_cost(self, cost:dict):
+            for color in cost.keys():
+                if cost[color] > self.bind_to.halfboard.total_mana[color]:
+                    return False
+            return True
 
     def __init__(self, halfboard:'HalfBoard') -> None:
         super().__init__(halfboard)
@@ -498,28 +507,29 @@ class SubZone(Zone):
                 if not self.basic_condition() or self.bind_to.card or not (self.board.in_burst or self.bind_to.halfboard.has_burst_chance):
                     return None
                 
-                if not (self.choice and isinstance(self.choice.selected, Card)):
-                    self.choice = Choice(self, 'Drag', 'Card', [self.bind_to], self.get_lettable_cards())
-                    yield self.choice
-                    if isinstance(self.choice.selected, Card) and self.choice.selected.location is self.bind_to.halfboard.hand:
-                        break
+                yield Choice(self, 'Drag', 'Card', [self.bind_to], self.get_lettable_cards())
+                if self.choice and isinstance(self.choice.selected, Card) and self.choice.selected.location is self.bind_to.halfboard.hand:
+                    break
             
             self.card = self.choice.selected
             self.choice = None
             self.activated = True
+            yield
             
             while True:
-                if not self.basic_condition() or self.bind_to.card or not (self.board.in_burst or self.bind_to.halfboard.has_burst_chance):
+                if not self.basic_condition() or self.bind_to.card:
                     return None
                     
-                if isinstance(self.bind_to, SubZone) and not self.board.in_burst:
-                    yield Burst(self, self.bind_to.halfboard)
-                elif not self.event:
-                    yield Move(self, self.card, self.bind_to)
-                elif self.event.done:
-                    return None
+                if not self.board.in_burst:
+                    if self.bind_to.halfboard.has_burst_chance:
+                        yield Burst(self, self.bind_to.halfboard)
+                    else:
+                        return None
+                
                 else:
-                    yield
+                    yield Move(self, self.card, self.bind_to)
+                    if self.event and self.event.done:
+                        return None
 
         def check_validity(self):
             if not self.basic_condition() or self.bind_to.card:
@@ -663,6 +673,21 @@ class HalfBoard(GameComponent):
     def total_power(self):
         return sum([zone.power for zone in self.zones])
 
+    @property
+    def total_mana(self):
+        total_mana:dict[Literal['R', 'Y', 'B'], int] = {
+            'R': 0,
+            'Y': 0,
+            'B': 0
+        }
+        for card in [zone.card for zone in self.zones if zone.card]:
+            for key in total_mana.keys():
+                if key == card.color:
+                    total_mana[key] += 1
+                if card.cost and card.cost[key] != 0:
+                    total_mana[key] += card.cost[key]
+        return total_mana
+
 class Board(GameComponent):
     class BurstEnd(TriggerEffect):
         bind_to: 'Board'
@@ -687,9 +712,11 @@ class Board(GameComponent):
             super().__init__(bind_to)
 
         def gen(self):
+            print('Attempt to change Turn...')
             self.activated = True
             yield
             yield Start_Turn(self)
+            print('Turn ended.')
             return None
 
     def __init__(self, player1:HalfBoard, player2:HalfBoard) -> None:
@@ -751,6 +778,7 @@ class Board(GameComponent):
         self.active_choices = []
         for gc in self.gamecomponents:
             for effect in [eff for eff in gc.effects if not isinstance(eff, TriggerEffect)]:
+                effect.initialize()
                 effect.process()
                 if effect.activated:
                     self.effect_que.append(effect)
@@ -787,6 +815,7 @@ class Board(GameComponent):
                     except NoCardException:
                         self.loser = player
                         raise EndException
+                    
             
             while True:
                 #Turn Start
@@ -799,6 +828,7 @@ class Board(GameComponent):
 
                     # Manual
                     if not self.effect_que:
+                        print('Empty que. Try Idle search...')
                         self.check_idle_effects()
                         while not self.effect_que:
                             yield
@@ -813,7 +843,9 @@ class Board(GameComponent):
                     
                     # Automatic
                     while self.effect_que:
+                        print(f'effect que: {self.effect_que}')
                         self.running = self.effect_que[0]
+                        print(f'running {self.running}...')
                         self.running.process()
 
                         if self.running.event:
@@ -838,7 +870,7 @@ class Board(GameComponent):
         try:
             while True:
                 result = next(self.game)
-                print('waiting for the message...')
+                print('game needs input...')
 
                 while not self.selected_choice:
                     print(f"Choices: {[choice.name for choice in self.active_choices]}")
