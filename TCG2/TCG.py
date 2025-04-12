@@ -1,4 +1,4 @@
-from typing import Literal, Generator, Sequence
+from typing import Literal, Generator, Sequence, Callable
 from random import shuffle
 
 class GameComponent:
@@ -45,22 +45,39 @@ class Effect(BoundComponent):
     def __init__(self, bind_to: GameComponent, name:str|None=None) -> None:
         super().__init__(bind_to, name)
         self.choice:'Choice|None' = None
+        self.event:'Event|None' = None
+        self._gen:Generator|None = None
+        self.activated = False
 
     def is_running(self):
         return True if self.board and self.board.running is self else False
 
-    def process(self) -> bool:
+    def gen(self) -> Generator["Choice|Event|None", None, None]:
+        yield
+
+    def process(self):
         '''
         True: activated. must be added to the que.\n
         False: not activated.
         '''
         print(f'processing {self}!')
-        return False
-    
+        if not self._gen:
+            self._gen = self.gen()
+        try:
+            result = next(self._gen)
+            if isinstance(result, Event):
+                self.event = result
+            elif isinstance(result, Choice):
+                self.choice = result
+        except StopIteration:
+            self.initialize()
+            return None
+
     def initialize(self):
         self.choice = None
-        if self.in_que():
-            self.board.event_que.remove(self)
+        self.event = None
+        self.activated = False
+        self._gen = self.gen()
     
     # region    Conditions
     def basic_condition(self):
@@ -68,7 +85,7 @@ class Effect(BoundComponent):
         return self.is_active() and self.current_turn()
     
     def in_que(self):
-        return True if self in self.board.event_que else False
+        return True if self in self.board.effect_que else False
 
     def is_active(self):
         if isinstance(self.bind_to, Card):
@@ -83,20 +100,30 @@ class Effect(BoundComponent):
             return True if self.bind_to.halfboard is self.board.current_player else False
     # endregion
 
+class StaticEffect(Effect):
+    target_type: list[Literal['Power', 'Time', 'Color', 'Cost']] = []
+
+    def __init__(self, bind_to:GameComponent, target_type:list[Literal['Power', 'Time', 'Color', 'Cost']], name:str|None=None) -> None:
+        super().__init__(bind_to, name)
+        self.target_type = target_type
+    
+    def check(self):
+        return None
+
+class CommandEffect(Effect):
+    pass
+
 class TriggerEffect(Effect):
     def __init__(self, bind_to: GameComponent) -> None:
         super().__init__(bind_to)
         self.triggered: bool = False
 
-    def trigger(self, phase:Literal['Start']|None=None) -> bool:
+    def trigger(self, timing:Literal['before', 'after'], event) -> None:
         raise NotImplementedError
     
     def initialize(self):
         self.triggered = False
         super().initialize()
-
-class ChainEffect(TriggerEffect):
-    pass
 
 class Choice:
     typ: Literal['Click', 'Drag', 'Button']
@@ -166,26 +193,101 @@ class Button(GameComponent, BoundComponent):
         self.bind_to = bind_to
         self.image = image
 
-class Actions:
-    @staticmethod
-    def move(card:'Card', location:'Zone|Pack'):
-        card.location = location
+class Event:
+    _board: 'Board|None' = None
 
-    @staticmethod
-    def destroy(card:'Card'):
-        if isinstance(card.location, Graveyard):
+    def __init__(self, effect:Effect|None, board:'Board|None'=None) -> None:
+        if effect:
+            self.effect = effect
+        elif board:
+            self._board = board
+        else:
+            raise Exception
+        
+        self.done:bool=False
+
+    @property
+    def board(self):
+        if self._board:
+            return self._board
+        else:
+            return self.effect.board
+        
+    def _run(self):
+        raise NotImplementedError
+
+    def run(self):
+        try:
+            self._run()
+        except GameException as e:
+            raise e
+        self.done = True
+
+# region Events
+class Move(Event):
+    card:'Card'
+    location:'Zone|Pack'
+
+    def __init__(self, effect, card, location) -> None:
+        super().__init__(effect)
+        self.card = card
+        self.location = location
+
+    def _run(self):
+        self.card.location = self.location
+
+class Destroy(Move):
+    card:'Card'
+
+    def __init__(self, effect, card) -> None:
+        super().__init__(effect, card, card.owner.graveyard)
+        self.card = card
+
+    def _run(self):
+        if isinstance(self.card.location, Graveyard):
             raise NeutralizedException
         else:
-            Actions.move(card, card.owner.graveyard)
+            Move(self.effect, self.card, self.location).run()
 
-    @staticmethod
-    def burst(player:'HalfBoard'):
-        player.has_burst_chance = False
-        player.board.in_burst = True
+class Burst(Event):
+    player:'HalfBoard'
 
-    @staticmethod
-    def shuffle(deck:'Deck'):
-        shuffle(deck.cards)
+    def __init__(self, effect, player) -> None:
+        super().__init__(effect)
+        self.player = player
+    
+    def _run(self):
+        self.player.has_burst_chance = False
+        self.player.board.in_burst = True
+
+class Shuffle(Event):
+    deck:'Deck'
+        
+    def __init__(self, effect, deck) -> None:
+        super().__init__(effect)
+        self.deck = deck
+
+    def _run(self):
+        shuffle(self.deck.cards)
+
+class ChangeValue(Event):
+    def __init__(self, effect:Effect|None, card:'Card', value:Literal['time', 'power'], modifier, board:'Board|None'=None) -> None:
+        super().__init__(effect, board)
+        self.card = card
+        self.value = value
+        self.modifier = modifier
+
+    def _run(self):
+        if self.value == 'time':
+            self.card.time += self.modifier
+        elif self.value == 'power':
+            self.card._power_modifier += self.modifier
+
+class Start_Turn(Event):
+    def _run(self):
+        self.board.turn += 1
+        self.board.current_player.has_burst_chance = True
+# endregion
 
 class Card(GameComponent):
     def __init__(self, owner:'HalfBoard', name:str, color:Literal['R', 'Y', 'B']|None, power=None,
@@ -195,6 +297,7 @@ class Card(GameComponent):
         self._name = name
         self._color = color
         self._power:int|None = power
+        self._power_modifier:int = 0
         self._location: 'Zone|Pack' = self.owner.deck
         self._image = image
         self._description = description
@@ -211,7 +314,7 @@ class Card(GameComponent):
 
     @property
     def power(self):
-        return self._power if self.is_active else None
+        return self._power + self._power_modifier if self._power and self.is_active else None
 
     @property
     def location(self):
@@ -313,36 +416,38 @@ class Pack(GameComponent):
         self._cards.remove(card)
 
 class Zone(GameComponent):
-    class Let(Effect):
+    class Let(CommandEffect):
         card:Card|None=None
         bind_to: 'Zone'
 
-        def process(self):
-            if not self.basic_condition():
-                self.initialize()
-                return False
+        def gen(self):
+            while True:
+                if not self.basic_condition() or self.bind_to.card:
+                    return None
+                
+                if not (self.choice and isinstance(self.choice.selected, Card)):
+                    self.choice = Choice(self, 'Drag', 'Card', [self.bind_to], self.get_lettable_cards())
+                    yield self.choice
+                    if isinstance(self.choice.selected, Card) and self.choice.selected.location is self.bind_to.halfboard.hand:
+                        break
             
-            if self.is_running() and self.card and self.card.location is self.bind_to.halfboard.hand:
+            self.card = self.choice.selected
+            self.choice = None
+            self.activated = True
+            
+            while True:
+                if not self.basic_condition() or self.bind_to.card:
+                    return None
+                    
                 if isinstance(self.bind_to, SubZone) and not self.board.in_burst:
-                    Actions.burst(self.bind_to.halfboard)
-                    return True
-                Actions.move(self.card, self.bind_to)
-                self.initialize()
-                return False
-            
-            elif self.choice and isinstance(self.choice.selected, Card):
-                self.card = self.choice.selected
-                self.choice = None
-                return True
-            
-            elif isinstance(self.bind_to, SubZone) and not self.bind_to.halfboard.has_burst_chance:
-                self.choice = None
-                return False
-            
-            else:
-                self.choice = Choice(self, 'Drag', 'Card', [self.bind_to], self.get_lettable_cards())
-                return False
-            
+                    yield Burst(self, self.bind_to.halfboard)
+                elif not self.event:
+                    yield Move(self, self.card, self.bind_to)
+                elif self.event.done:
+                    return None
+                else:
+                    yield
+                        
         def initialize(self):
             self.card = None
             super().initialize()
@@ -388,62 +493,80 @@ class SubZone(Zone):
         card:Card|None=None
         bind_to: 'SubZone'
 
-        def process(self):
-            if not self.basic_condition() or not (self.board.in_burst or self.bind_to.halfboard.has_burst_chance):
-                self.initialize()
-                return False
+        def gen(self):
+            while True:
+                if not self.basic_condition() or self.bind_to.card or not (self.board.in_burst or self.bind_to.halfboard.has_burst_chance):
+                    return None
+                
+                if not (self.choice and isinstance(self.choice.selected, Card)):
+                    self.choice = Choice(self, 'Drag', 'Card', [self.bind_to], self.get_lettable_cards())
+                    yield self.choice
+                    if isinstance(self.choice.selected, Card) and self.choice.selected.location is self.bind_to.halfboard.hand:
+                        break
             
-            if self.is_running() and self.card and self.card.location is self.bind_to.halfboard.hand:
-                if not self.board.in_burst:
-                    Actions.burst(self.bind_to.halfboard)
-                    return True
-                Actions.move(self.card, self.bind_to)
-                self.initialize()
-                return False
+            self.card = self.choice.selected
+            self.choice = None
+            self.activated = True
             
-            elif self.choice and isinstance(self.choice.selected, Card):
-                self.card = self.choice.selected
-                self.choice = None
-                return True
+            while True:
+                if not self.basic_condition() or self.bind_to.card or not (self.board.in_burst or self.bind_to.halfboard.has_burst_chance):
+                    return None
+                    
+                if isinstance(self.bind_to, SubZone) and not self.board.in_burst:
+                    yield Burst(self, self.bind_to.halfboard)
+                elif not self.event:
+                    yield Move(self, self.card, self.bind_to)
+                elif self.event.done:
+                    return None
+                else:
+                    yield
 
-            else:
-                self.choice = Choice(self, 'Drag', 'Card', [self.bind_to], self.get_lettable_cards())
+        def check_validity(self):
+            if not self.basic_condition() or self.bind_to.card:
+                self.initialize()
                 return False
+            else:
+                return True
 
 class Deck(Pack):
     class Draw(Effect):
         selected: bool = False
         bind_to: 'Deck'
 
-        def process(self):
-            if not self.basic_condition():
-                self.initialize()
-                return False
+        def gen(self):
+            while True:
+                if not self.basic_condition():
+                    return None
+                
+                elif self.bind_to.halfboard.has_burst_chance:
+                    yield Choice(self, 'Click', 'Location', [self.bind_to])
+                    if self.choice and self.choice.selected:
+                        break
 
-            if self.is_running() and self.selected is True:
+                else:
+                    self.choice = None
+                    yield
+
+            self.choice = None
+            self.activated = True
+            yield
+
+            while True:
+                if not self.basic_condition():
+                    return None
+                
                 try:
-                    Actions.move(self.bind_to.top(), self.bind_to.halfboard.hand)
-                    self.board.in_burst = False
-                    self.bind_to.halfboard.has_burst_chance = False
-                    self.initialize()
-                    return False
+                    yield Move(self, self.bind_to.top(), self.bind_to.halfboard.hand)
+                    if self.event and self.event.done:
+                        break
                 
                 except NoCardException:
                     self.board.loser = self.bind_to.halfboard
                     raise EndException
-            
-            elif self.choice and self.choice.selected:
-                self.selected = True
-                self.choice = None
-                return True
-
-            elif self.bind_to.halfboard.has_burst_chance:
-                self.choice = Choice(self, 'Click', 'Location', [self.bind_to])
-                return False
-            
-            else:
-                self.initialize()
-                return False
+                
+            self.board.in_burst = False
+            self.bind_to.halfboard.has_burst_chance = False
+            return None
             
         def initialize(self):
             self.selected = False
@@ -481,28 +604,24 @@ class HalfBoard(GameComponent):
         bind_to: 'HalfBoard'
         zones: list[Zone]|None = None
 
-        def trigger(self, phase) -> bool:
-            if not self.in_que() and isinstance(self.board.running, Deck.Draw) and self.bind_to is self.board.current_player:
-                return True
+        def trigger(self, timing, event):
+            if not self.in_que() and timing == 'after' and isinstance(self.board.running, Deck.Draw) and self.bind_to is self.board.current_player:
+                self.activated = True
             else:
-                return False
+                self.activated = False
             
-        def process(self) -> bool:
-            if self.is_running():
-                if not self.zones:
-                    self.zones = [zone for zone in self.bind_to.zones]
-                
-                while self.zones:
+        def gen(self):
+            if not self.zones:
+                self.zones = [zone for zone in self.bind_to.zones if zone.card]
+            while self.zones:
+                if self.is_running():
                     zone = self.zones.pop(0)
                     if zone.card and zone.card.time:
-                        zone.card.time -= 1
-                        return True
-
-                self.initialize()
-                return False
-            else:
-                self.initialize()
-                return False
+                        yield ChangeValue(self, zone.card, 'time', -1)
+                else:
+                    yield
+            
+            return None
 
         def initialize(self):
             self.zones = None
@@ -545,28 +664,37 @@ class HalfBoard(GameComponent):
         return sum([zone.power for zone in self.zones])
 
 class Board(GameComponent):
-    class BurstEnd(ChainEffect):
+    class BurstEnd(TriggerEffect):
         bind_to: 'Board'
-        def trigger(self, phase):
-            if not self.in_que() and isinstance(self.board.running, Deck.Draw) and self.board.in_burst:
-                return True
+        def trigger(self, timing, event):
+            if not self.in_que() and timing == 'after' and isinstance(self.board.running, Deck.Draw) and self.board.in_burst:
+                self.activated = True
             else:
-                return False
+                self.activated = False
         
-        def process(self):
-            if self.is_running():
-                for subzone in [subzone for player in self.bind_to.players for subzone in player.subzones]:
-                    if subzone.card:
-                        Actions.destroy(subzone.card)
-                        return True
-                self.board.in_burst = False
-                self.initialize()
-                return False
-            else:
-                return False
+        def gen(self):
+            for subzone in [subzone for player in self.bind_to.players for subzone in player.subzones]:
+                if subzone.card:
+                    yield Destroy(self, subzone.card)
+            self.board.in_burst = False
+            return None
     
+    class GameInit(Effect):
+        pass
+
+    class TurnStartEffect(Effect):
+        def __init__(self, bind_to: GameComponent) -> None:
+            super().__init__(bind_to)
+
+        def gen(self):
+            self.activated = True
+            yield
+            yield Start_Turn(self)
+            return None
+
     def __init__(self, player1:HalfBoard, player2:HalfBoard) -> None:
         self.effects = [self.BurstEnd(self)]
+        self._gameinit = self.GameInit(self)
 
         self.player1 = player1
         self.player2 = player2
@@ -579,7 +707,7 @@ class Board(GameComponent):
         self.in_burst:bool = False
 
         self.running: Effect|None = None
-        self.event_que: list[Effect] = []
+        self.effect_que: list[Effect] = []
         self.active_choices: list[Choice] = []
         self.selected_choice: Choice|None = None
 
@@ -622,66 +750,85 @@ class Board(GameComponent):
     def check_idle_effects(self):
         self.active_choices = []
         for gc in self.gamecomponents:
-            for idle_effect in [eff for eff in gc.effects if not isinstance(eff, TriggerEffect)]:
-                if idle_effect.process():
-                    self.event_que.append(idle_effect)
-                elif idle_effect.choice:
-                    self.active_choices.append(idle_effect.choice)
+            for effect in [eff for eff in gc.effects if not isinstance(eff, TriggerEffect)]:
+                effect.process()
+                if effect.activated:
+                    self.effect_que.append(effect)
+                elif effect.choice:
+                    self.active_choices.append(effect.choice)
 
-    def check_trigger_effects(self, phase:Literal['Start']|None=None):
+        if self.effect_que:
+            self.active_choices = []
+
+    def check_trigger_effects(self, timing:Literal['before', 'after'], event):
         chains = []
         for gc in self.gamecomponents:
-            for trigger_effect in [eff for eff in gc.effects if isinstance(eff, TriggerEffect)]:
-                if trigger_effect.trigger(phase):
-                    if isinstance(trigger_effect, ChainEffect):
-                        chains.append(trigger_effect)
-                    else:
-                        self.event_que.append(trigger_effect)
-        self.event_que = chains + self.event_que
+            for effect in [eff for eff in gc.effects if not isinstance(eff, CommandEffect)]:
+                if isinstance(effect, TriggerEffect):
+                    effect.trigger(timing, event)
+                    if effect.activated:
+                        if timing == 'before':
+                            chains.append(effect)
+                        else:
+                            self.effect_que.append(effect)
+                elif isinstance(effect, StaticEffect) and effect.check():
+                    self.effect_que.append(effect)
+
+        self.effect_que = chains + self.effect_que
 
     def play(self):
         try:
             #Init
             for player in self.players:
-                Actions.shuffle(player.deck)
+                Shuffle(self._gameinit, player.deck).run()
                 for _ in range(5):
                     try:
-                        Actions.move(player.deck.top(), player.hand)
+                        Move(self._gameinit, player.deck.top(), player.hand).run()
                     except NoCardException:
                         self.loser = player
                         raise EndException
             
             while True:
                 #Turn Start
-                self.turn += 1
-                self.current_player.has_burst_chance = True
-                self.check_trigger_effects('Start')
+                turn_start = self.TurnStartEffect(self)
+                turn_start.process()    # activates
+                self.effect_que.append(turn_start)
 
                 # Power check
-                while self.current_player.total_power <= self.opponent().total_power:
+                while self.current_player.total_power <= self.opponent().total_power or turn_start.activated:
+
                     # Manual
-                    if not self.event_que:
+                    if not self.effect_que:
                         self.check_idle_effects()
-                        while not self.event_que:
+                        while not self.effect_que:
                             yield
                             if self.selected_choice:
-                                if self.selected_choice.effect.process():
-                                    self.event_que.append(self.selected_choice.effect)
+                                self.selected_choice.effect.process()
+                                if self.selected_choice.effect.activated:
+                                    self.effect_que.append(self.selected_choice.effect)
                                 self.selected_choice = None
                             else:
                                 raise GameException('input loop break without appropriate input!')
                         self.active_choices.clear()
-                    # Automatic
-                    while self.event_que:
-                        self.running = self.event_que[0]
-                        self.check_trigger_effects()
-                        if self.event_que[0] is self.running:
-                            while self.running.process():
-                                if self.running and self.running.choice:
-                                    yield
-                        else:
-                            continue
                     
+                    # Automatic
+                    while self.effect_que:
+                        self.running = self.effect_que[0]
+                        self.running.process()
+
+                        if self.running.event:
+                            self.check_trigger_effects('before', self.running.event)
+                            if self.running == self.effect_que[0]:
+                                self.running.event.run()
+                                self.check_trigger_effects('after', self.running.event)
+                                self.running.process()
+                            
+                        elif self.running.choice:
+                            yield
+                            
+                        if not self.running.activated:
+                            self.effect_que.remove(self.running)
+
                     self.running = None
 
         except EndException as end:
