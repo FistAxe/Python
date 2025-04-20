@@ -1,8 +1,12 @@
 import pygame as pg
 import sys
+import os
+from typing import Union, Literal
+
+root_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(root_dir)
 import TCG
 import TCGplayer
-from typing import Union, Literal
 
 pg.init()
 
@@ -54,11 +58,11 @@ ROW6 = ROW5 + ROW_HEIGHT
 # region Card
 CARD_SIZE = [75, 105]
 CARD_NAME_HEIGHT = 12
-card_back_image = pg.image.load('./images/card_back.png').convert()
-card_front_image = pg.image.load('./images/card_front.png').convert()
-card_front_R = pg.image.load('./images/card_front_R.png').convert()
-card_front_Y = pg.image.load('./images/card_front_Y.png').convert()
-card_front_B = pg.image.load('./images/card_front_B.png').convert()
+card_back_image = pg.image.load(os.path.join(root_dir, 'images', 'card_back.png')).convert()
+card_front_image = pg.image.load(os.path.join(root_dir, 'images', 'card_front.png')).convert()
+card_front_R = pg.image.load(os.path.join(root_dir, 'images', 'card_front_R.png')).convert()
+card_front_Y = pg.image.load(os.path.join(root_dir, 'images', 'card_front_Y.png')).convert()
+card_front_B = pg.image.load(os.path.join(root_dir, 'images', 'card_front_B.png')).convert()
 
 # Card Fonts
 NAME_FONT = pg.font.SysFont('Gulim', 11)
@@ -231,8 +235,8 @@ board = TCG.Board(player1, player2)
 card_image_dict: dict[type[TCG.Card], pg.Surface] = {}
 card_image_active_dict: dict[type[TCG.Card], pg.Surface] = {}
 choice_image_dict: dict[str, pg.Surface] = {}
-choice_image_dict['default'] = pg.image.load('./images/choice_default.png').convert_alpha()
-choice_image_dict['attack'] = pg.image.load('./images/choice_attack.png').convert_alpha()
+choice_image_dict['default'] = pg.image.load(os.path.join(root_dir, 'images', 'choice_default.png')).convert_alpha()
+choice_image_dict['attack'] = pg.image.load(os.path.join(root_dir, 'images', 'choice_attack.png')).convert_alpha()
 
 hovering = []
 clicking = []

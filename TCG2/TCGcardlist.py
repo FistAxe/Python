@@ -1,3 +1,7 @@
+import sys
+import os
+root_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(root_dir)
 import TCG
 
 class Bear(TCG.Creature):
@@ -9,7 +13,7 @@ class Bear(TCG.Creature):
             power = 3,
             time = 2,
             description = 'Just a bear.',
-            image = './images/Bear.png'
+            image = os.path.join(root_dir, 'images', 'Bear.png')
             )
         
 class FireBall(TCG.Spell):
@@ -18,7 +22,7 @@ class FireBall(TCG.Spell):
             owner,
             name = 'Fire Ball',
             color = 'R',
-            image = './images/Fireball.png',
+            image = os.path.join(root_dir, 'images', 'Fireball.png'),
             description= 'asdf'
             )
         
@@ -29,7 +33,7 @@ class Goblet(TCG.Spell):
             name = 'Goblet',
             color = 'B',
             description = 'A goblet.',
-            image = './images/Goblet.png'
+            image = os.path.join(root_dir, 'images', 'Goblet.png')
         )
 
 '''

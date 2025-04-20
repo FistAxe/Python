@@ -80,7 +80,7 @@ class Effect(BoundComponent):
         return self.is_active() and self.current_turn()
     
     def in_que(self):
-        return True if self in self.board.effect_que else False
+        return True if self in self.board.effect_que else False   
 
     def is_active(self):
         if isinstance(self.bind_to, Card):
@@ -109,16 +109,8 @@ class CommandEffect(Effect):
     pass
 
 class TriggerEffect(Effect):
-    def __init__(self, bind_to: GameComponent) -> None:
-        super().__init__(bind_to)
-        self.triggered: bool = False
-
-    def trigger(self, timing:Literal['before', 'after'], event) -> None:
+    def trigger(self, timing:Literal['before', 'after'], event) -> Effect|None:
         raise NotImplementedError
-    
-    def initialize(self):
-        self.triggered = False
-        super().initialize()
 
 class Choice:
     typ: Literal['Click', 'Drag', 'Button']
@@ -212,6 +204,7 @@ class Event:
         raise NotImplementedError
 
     def run(self):
+        '''self.done = True'''
         try:
             self._run()
         except GameException as e:
@@ -223,8 +216,9 @@ class Move(Event):
     card:'Card'
     location:'Zone|Pack'
 
-    def __init__(self, effect, card, location) -> None:
-        super().__init__(effect)
+    def __init__(self, effect:Effect|None, card, location) -> None:
+        if effect:
+            super().__init__(effect)
         self.card = card
         self.location = location
 
@@ -234,7 +228,7 @@ class Move(Event):
 class Destroy(Move):
     card:'Card'
 
-    def __init__(self, effect, card) -> None:
+    def __init__(self, effect, card:'Card') -> None:
         super().__init__(effect, card, card.owner.graveyard)
         self.card = card
 
@@ -258,7 +252,7 @@ class Burst(Event):
 class Shuffle(Event):
     deck:'Deck'
         
-    def __init__(self, effect, deck) -> None:
+    def __init__(self, effect:Effect, deck) -> None:
         super().__init__(effect)
         self.deck = deck
 
@@ -266,7 +260,7 @@ class Shuffle(Event):
         shuffle(self.deck.cards)
 
 class ChangeValue(Event):
-    def __init__(self, effect:Effect|None, card:'Card', value:Literal['time', 'power'], modifier, board:'Board|None'=None) -> None:
+    def __init__(self, effect:Effect|None, card:'Card', value:Literal['time', 'power'], modifier:int, board:'Board|None'=None) -> None:
         super().__init__(effect, board)
         self.card = card
         self.value = value
@@ -274,7 +268,7 @@ class ChangeValue(Event):
 
     def _run(self):
         if self.value == 'time':
-            self.card.time += self.modifier
+            self.card._time_modifier += self.modifier
         elif self.value == 'power':
             self.card._power_modifier += self.modifier
 
@@ -539,7 +533,7 @@ class SubZone(Zone):
                 return True
 
 class Deck(Pack):
-    class Draw(Effect):
+    class Draw(CommandEffect):
         selected: bool = False
         bind_to: 'Deck'
 
@@ -615,7 +609,7 @@ class HalfBoard(GameComponent):
         zones: list[Zone]|None = None
 
         def trigger(self, timing, event):
-            if not self.in_que() and timing == 'after' and isinstance(self.board.running, Deck.Draw) and self.bind_to is self.board.current_player:
+            if timing == 'after' and isinstance(self.board.running, Deck.Draw) and self.bind_to is self.board.current_player:
                 self.activated = True
             else:
                 self.activated = False
@@ -624,10 +618,17 @@ class HalfBoard(GameComponent):
             if not self.zones:
                 self.zones = [zone for zone in self.bind_to.zones if zone.card]
             while self.zones:
-                if self.is_running():
+                if self.event and self.event.done:
+                    self.event = None
+                    yield
+                
+                elif self.is_running():
                     zone = self.zones.pop(0)
-                    if zone.card and zone.card.time:
-                        yield ChangeValue(self, zone.card, 'time', -1)
+                    if zone.card:
+                        if zone.card.time is not None:
+                            yield ChangeValue(self, zone.card, 'time', -1)
+                        else:
+                            yield Destroy(self, zone.card)
                 else:
                     yield
             
@@ -692,7 +693,7 @@ class Board(GameComponent):
     class BurstEnd(TriggerEffect):
         bind_to: 'Board'
         def trigger(self, timing, event):
-            if not self.in_que() and timing == 'after' and isinstance(self.board.running, Deck.Draw) and self.board.in_burst:
+            if timing == 'after' and isinstance(self.board.running, Deck.Draw) and self.board.in_burst:
                 self.activated = True
             else:
                 self.activated = False
@@ -704,8 +705,27 @@ class Board(GameComponent):
             self.board.in_burst = False
             return None
     
-    class GameInit(Effect):
-        pass
+    class CardDecayFactory(TriggerEffect):
+        class CardDecay(Effect):
+            bind_to:'Board'
+            def __init__(self, bind_to: GameComponent, card:Card, name:str|None=None) -> None:
+                super().__init__(bind_to, name)
+                self.card = card
+                self.activated = True
+
+            def gen(self):
+                while not self.card.time and isinstance(self.card.location, Zone):
+                    yield Destroy(self, self.card)
+                return None
+        
+        bind_to:'Board'
+        def trigger(self, timing: Literal['before']|Literal['after'], event:Event) -> Effect|None:
+            if timing == 'before':
+                return None
+
+            for gc in self.bind_to.gamecomponents:
+                if isinstance(gc, Card) and gc.time is not None and gc.time <= 0:
+                    return self.CardDecay(self.bind_to, gc)
 
     class TurnStartEffect(Effect):
         def __init__(self, bind_to: GameComponent) -> None:
@@ -720,8 +740,7 @@ class Board(GameComponent):
             return None
 
     def __init__(self, player1:HalfBoard, player2:HalfBoard) -> None:
-        self.effects = [self.BurstEnd(self)]
-        self._gameinit = self.GameInit(self)
+        self.effects = [self.BurstEnd(self), self.CardDecayFactory(self)]
 
         self.player1 = player1
         self.player2 = player2
@@ -791,10 +810,15 @@ class Board(GameComponent):
     def check_trigger_effects(self, timing:Literal['before', 'after'], event):
         chains = []
         for gc in self.gamecomponents:
-            for effect in [eff for eff in gc.effects if not isinstance(eff, CommandEffect)]:
+            for effect in [eff for eff in gc.effects if not isinstance(eff, CommandEffect) and not eff.in_que()]:
                 if isinstance(effect, TriggerEffect):
-                    effect.trigger(timing, event)
-                    if effect.activated:
+                    new_effect = effect.trigger(timing, event)
+                    if new_effect:
+                        if timing == 'before':
+                            chains.append(new_effect)
+                        else:
+                            self.effect_que.append(new_effect)
+                    elif effect.activated:
                         if timing == 'before':
                             chains.append(effect)
                         else:
@@ -808,15 +832,14 @@ class Board(GameComponent):
         try:
             #Init
             for player in self.players:
-                Shuffle(self._gameinit, player.deck).run()
+                shuffle(player.deck.cards)
                 for _ in range(5):
                     try:
-                        Move(self._gameinit, player.deck.top(), player.hand).run()
+                        Move(None, player.deck.top(), player.hand).run()
                     except NoCardException:
                         self.loser = player
                         raise EndException
                     
-            
             while True:
                 #Turn Start
                 turn_start = self.TurnStartEffect(self)
@@ -851,6 +874,7 @@ class Board(GameComponent):
                         if self.running.event:
                             self.check_trigger_effects('before', self.running.event)
                             if self.running == self.effect_que[0]:
+                                print(f'running {self.running.event}!')
                                 self.running.event.run()
                                 self.check_trigger_effects('after', self.running.event)
                                 self.running.process()
