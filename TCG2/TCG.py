@@ -756,6 +756,7 @@ class Board(GameComponent):
         self.effect_que: list[Effect] = []
         self.active_choices: list[Choice] = []
         self.selected_choice: Choice|None = None
+        self.choosable = {"cards": set(), "gamecomponents": set()}
 
         self.game = self.play()
 
@@ -828,6 +829,13 @@ class Board(GameComponent):
 
         self.effect_que = chains + self.effect_que
 
+    def get_choosables(self):
+        self.choosable["cards"] = set()
+        self.choosable['gamecomponents'] = set()
+        for choosables in [choice.drops for choice in self.active_choices if hasattr(choice, 'drops')]:
+            for c in choosables:
+                self.choosable['cards'].add(c) if isinstance(c, Card) else self.choosable['gamecomponents'].add(c)
+
     def play(self):
         try:
             #Init
@@ -863,6 +871,7 @@ class Board(GameComponent):
                             else:
                                 raise GameException('input loop break without appropriate input!')
                         self.active_choices.clear()
+                        self.choosable['cards'].clear()
                     
                     # Automatic
                     while self.effect_que:
@@ -880,7 +889,9 @@ class Board(GameComponent):
                                 self.running.process()
                             
                         elif self.running.choice:
+                            self.active_choices.append(self.running.choice)
                             yield
+                            self.active_choices.remove(self.running.choice)
                             
                         if not self.running.activated:
                             self.effect_que.remove(self.running)
@@ -895,6 +906,7 @@ class Board(GameComponent):
             while True:
                 result = next(self.game)
                 print('game needs input...')
+                self.get_choosables()
 
                 while not self.selected_choice:
                     print(f"Choices: {[choice.name for choice in self.active_choices]}")

@@ -63,6 +63,15 @@ card_front_image = pg.image.load(os.path.join(root_dir, 'images', 'card_front.pn
 card_front_R = pg.image.load(os.path.join(root_dir, 'images', 'card_front_R.png')).convert()
 card_front_Y = pg.image.load(os.path.join(root_dir, 'images', 'card_front_Y.png')).convert()
 card_front_B = pg.image.load(os.path.join(root_dir, 'images', 'card_front_B.png')).convert()
+card_active_border = pg.image.load(os.path.join(root_dir, 'images', 'card_active_border.png')).convert_alpha()
+
+card_back_active = card_back_image.copy()
+card_front_active = card_front_image.copy()
+card_front_R_active = card_front_R.copy()
+card_front_Y_active = card_front_Y.copy()
+card_front_B_active = card_front_B.copy()
+for card in [card_back_active, card_front_active, card_front_R_active, card_front_Y_active, card_front_B_active]:
+    card.blit(card_active_border, (0, 0))
 
 # Card Fonts
 NAME_FONT = pg.font.SysFont('Gulim', 11)
@@ -258,23 +267,30 @@ def get_card_image(card:TCG.Card):
             # Make one.
             if card.color == 'R':
                 real_image_bg = card_front_R.copy()
+                real_image_active_bg = card_front_R_active.copy()
             elif card.color == 'Y':
                 real_image_bg = card_front_Y.copy()
+                real_image_active_bg = card_front_Y_active.copy()
             elif card.color == 'B':
                 real_image_bg = card_front_B.copy()
+                real_image_active_bg = card_front_B_active.copy()
             else:
                 real_image_bg = card_front_image.copy()
+                real_image_active_bg = card_front_active.copy()
             
             if card.image:
                 img = pg.image.load(card.image).convert()
                 real_image_bg.blit(img, IMAGE_COORD)
+                real_image_active_bg.blit(img, IMAGE_COORD)
             if card.name:
                 name = NAME_FONT.render(card.name, False, BLACK)
                 real_image_bg.blit(name, NAME_COORD)
+                real_image_active_bg.blit(img, NAME_COORD)
 
             card_image_dict[type(card)] = real_image_bg.convert()
+            card_image_active_dict[type(card)] = real_image_active_bg.convert()
 
-        real_image = card_image_dict[type(card)]
+        real_image = card_image_dict[type(card)] if card not in board.choosable['cards'] else card_image_active_dict[type(card)]
 
         # Draw variable values on each frame
         if card.power:
@@ -282,7 +298,7 @@ def get_card_image(card:TCG.Card):
         
         return real_image
     else:
-        return card_back_image
+        return card_back_active if card in board.choosable['cards'] else card_back_image
 
 def get_button_image(button:TCG.Button):
     if button.image:
@@ -487,7 +503,6 @@ def screen_generator():
         mana_info_generator(total_mana_2_surface, player2)
         SURF.blit(total_mana_1_surface, total_mana_1_pos)
         SURF.blit(total_mana_2_surface, total_mana_2_pos)
-
 
     def explanation_generator():
         explanation = ['', '', None]
