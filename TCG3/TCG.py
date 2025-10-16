@@ -1,11 +1,10 @@
-from typing import Literal, Type, Generator
+from typing import Literal, Type, Generator, Any
 
 CANCEL = 'Cancel'
 
 COLORTYPE = Literal['R', 'Y', 'B']
-EFFECTSTATES = Literal['Idle', 'Pending', 'Executing']
 EFFECTTYPES = Literal['StateTrigger', 'EffectTrigger', 'Declare']
-TAGS = EFFECTSTATES|EFFECTTYPES|COLORTYPE
+TAGS = EFFECTTYPES|COLORTYPE
 
 
 class Player:
@@ -33,9 +32,10 @@ class GameComponent:
         return self._owner
 
 class Effect:
+    _activated : bool = False
     _tags : set[TAGS] = set()
     game : 'Game'
-    _generator : Generator[list|None, GameComponent|None, None]
+    param : dict[str, int|GameComponent|list[GameComponent]|tuple[GameComponent]]
     
     def __init__(self, parent:'Card|Game') -> None:
         self.parent = parent
@@ -43,37 +43,28 @@ class Effect:
             self.game = self.parent
         else:
             self.game = self.parent.game
-        self._init()
 
-    def _init(self):
-        self._generator = self._gen()
+    def check(self, drag:GameComponent|None, drop:GameComponent|None) -> bool|list[GameComponent]:
+        return False
 
-    def run(self, gc:GameComponent|None) -> 'Effect|list[GameComponent]|None':
-        return self._generator.send(gc)
-    
-    def _gen(self) -> Generator[list[GameComponent]|None, GameComponent|None, None]:
-        raise NotImplementedError
+    def process(self, gc:GameComponent|None) -> bool|list[GameComponent]:
+        return False
     
     def _settype(self, *typ:Literal['StateTrigger', 'EffectTrigger', 'Declare']):
         self._tags = self._tags.difference({'StateTrigger', 'EffectTrigger', 'Declare'})
         self._tags = self._tags.intersection(typ)
 
     @property
-    def tags(self):
-        state = None
-
-        if self._tags & {'Idle', 'Pending', 'Executing'}:
-            raise Exception('Defined State in Tags!')
-        
-        in_que = self in self.game.event_que
-        if in_que:
-            state = 'Idle'
-        elif self is not self.game.executing:
-            state = 'Pending'
-        else:
-            state = 'Executing'
-        
-        return self._tags & set(state)
+    def tags(self):        
+        return self._tags
+    
+    @property
+    def activated(self):
+        return self._activated
+    
+    @activated.setter
+    def activated(self, b:bool):
+        self._activated = b
 
 class Card(GameComponent):
     _name : str = "Dummy"
@@ -212,9 +203,8 @@ class Game:
                      self._players[1] : Graveyard(self, 'Graveyard 2', self._players[1])}
         self.hand = {self._players[0] : Hand(self, 'Hand 1', self._players[0]),
                      self._players[1] : Hand(self, 'Hand 2', self._players[1])}
-        self.rules = [self.DestroyRule(self), self.DrawRule(self), self.LetRule(self)]
+        self.rules : list[Effect] = [self.DestroyRule(self), self.DrawRule(self), self.LetRule(self)]
 
-        self.effect_que: list[Effect] = []
         self.executing : Effect|None = None
 
     @property
@@ -245,81 +235,74 @@ class Game:
     def tot_power(self, player:Player):
         return sum(column.col_power(player) for column in self.row.columns)
 
-    def search_effects(self, *efftypes:EFFECTTYPES, and_or:Literal['and', 'or']='and'):
-        def _classifier(effect, effsets, and_or):
-            if not efftypes:
-                return True
-            elif and_or == 'and':
-                return all(tag in effect.tags for tag in effsets)
-            elif and_or == 'or':
-                return bool(effect.tags & effsets)
-            return False
-    
-        effectlist : list[Effect] = []
-        choices : dict[Effect, list] = {}
-        efftypes_set = set(efftypes)
-        effectlist.extend(self.rules)
-        for effects in [card.effects for card in self.cards()]:
-            for effect in effects:
-                if _classifier(effect, efftypes_set, and_or):
-                    effectlist.append(effect)
-        
-        for effect in effectlist:
-            result = effect.run(None)
-            if isinstance(result, Effect):
-                return result
-            elif isinstance(result, list):
-                choices[effect] = result
-        return choices
+    def get_effects(self):
+        return self.rules + [effect for card in self.cards() for effect in card.effects]
+
+    def check_effects(self, effects:list[Effect]|None=None, in_chain:bool=False, drag:GameComponent|None=None, drop:GameComponent|None=None):
+        if not in_chain:
+            idle_choices : dict[Effect, list[GameComponent]]= {}
+        effs = effects if effects else self.get_effects()
+        for effect in effs:
+            result = effect.check(drag, drop)
+            if type(result) == list and not in_chain:
+                idle_choices[effect] = result
+            elif result is True:
+                effect.activated = True
+        return idle_choices if not in_chain else None
+
+    def get_first_active_effect(self):
+        active_effects = [effect for effect in self.get_effects() if effect.activated]
+        return active_effects[0] if active_effects else None
 
     def run(self):
-        result = None
-
         yield 'Game start'
 
         while True:
             yield 'Turn starts.'
 
             while self.tot_power(self.current_player) <= self.tot_power(self.opponent()):
-                if not result:
-                    result = self.search_effects()
-                
-                #automatic
-                if isinstance(result, Effect):
-                    if self.effect_que[-1] is not result:
-                        self.effect_que.append(result)
-                    elif self.effect_que:
-                        result = self.effect_que[-1].run(None)
-                        self.effect_que.pop()
-                    continue
+                while (last_chain := self.get_first_active_effect()) is not self.executing:
+                    self.executing = last_chain
+                    self.check_effects(in_chain=True)
+
+                if last_chain:
+                    responce = None
+                    while True:
+                        result = last_chain.process(responce)
+                        if isinstance(result, bool):
+                            break
+                        else:
+                            responce = yield {last_chain:result}
 
                 #manual
-                elif result:
-                    responce = None
-                    while isinstance(responce, Choice):
-                        yield result
-                        responce = yield
-                        if not isinstance(responce, Choice):
-                            yield 'Wrong Choice!'
-                    assert isinstance(responce, Choice)
-                    result = responce.parent.send(responce)
-                    if isinstance(result, Choice):
-                        result = [result]
+                elif (choices := self.check_effects(in_chain=False)):
+                    while self.get_first_active_effect():
+                        responce = yield choices
+                        possible_choices = [key for key, value in choices.items() if responce in value]
+                        choices = self.check_effects(effects=possible_choices, drag=responce)
+                        if not choices:
+                            raise Exception('If drag is possible drop is possible!')
+                        responce = yield choices
+                        possible_choices = [key for key, value in choices.items() if responce in value]
+                        choices = self.check_effects(effects=possible_choices, drop=responce)
+                        if not choices:
+                            break
 
                 #No Action
                 else:
                     return self.current_player
         
-    def IO(self) -> Generator[list[Choice]|str|None, Choice, StopIteration]:
+    def IO(self) -> Generator[dict|str|None, GameComponent, StopIteration]:
         game = self.run()
 
         try:
+            message = None
             while True:
                 responce = None
                 while isinstance(responce, str):
                     responce = game.send(message)
                     yield responce
-                message : Choice = yield
+                message = yield
 
         except StopIteration as e:
             return e
