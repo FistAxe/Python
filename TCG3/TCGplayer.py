@@ -1,8 +1,8 @@
-import TCG
+from TCG import Player
 import TCGcardlist as cl
 
-player1 = TCG.HalfBoard('Player 1')
-player1.deck._cards = [
+player1 = Player('Player 1')
+player1._cardlist = [
     cl.Bear(player1),
     cl.Bear(player1),
     cl.FireBall(player1),
@@ -11,8 +11,8 @@ player1.deck._cards = [
     cl.Goblet(player1)
 ]
 
-player2 = TCG.HalfBoard('Player 2')
-player2.deck._cards = [
+player2 = Player('Player 2')
+player2._cardlist = [
     cl.Bear(player2),
     cl.Bear(player2),
     cl.Bear(player2),
