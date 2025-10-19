@@ -49,8 +49,9 @@ ROW_HEIGHT = CARD_SIZE[1] + 10
 COLUMN_SPACING = 10
 
 ROW_MIDDLE = HEIGHT//2
-ROW_UP = ROW_MIDDLE - ROW_HEIGHT
-ROW_DOWN = ROW_MIDDLE + ROW_HEIGHT
+ROW_SPACING = 20
+ROW_UP = ROW_MIDDLE - ROW_HEIGHT - ROW_SPACING
+ROW_DOWN = ROW_MIDDLE + ROW_HEIGHT + ROW_SPACING
 
 COLUMN_LEFT = BOARD_MARGIN + COLUMN_WIDTH//2
 COLUMN_RIGHT = BOARD_MARGIN + BOARD_WIDTH - COLUMN_WIDTH//2
@@ -125,13 +126,13 @@ deck_surface = pg.Surface(ZONE_SIZE)
 deck_surface.fill(WHITE)
 pg.draw.rect(deck_surface, BLACK, deck_surface.get_rect(), LINE_WIDTH)
 
-gy1_rv = topleft(COLUMN_RIGHT, ROW_UP)
-gy2_rv = topleft(COLUMN_LEFT, ROW_DOWN)
+gy1_rv = topleft(COLUMN_RIGHT, ROW_MIDDLE)
+gy2_rv = topleft(COLUMN_LEFT, ROW_MIDDLE)
 graveyard_surface = pg.Surface(ZONE_SIZE)
 graveyard_surface.fill(GY_BG)
 pg.draw.rect(graveyard_surface, BLACK, graveyard_surface.get_rect(), LINE_WIDTH)
 
-row_rv = (BOARD_MARGIN + BOARD_WIDTH//2, HEIGHT//2)
+row_rv = (BOARD_MARGIN + COLUMN_WIDTH, HEIGHT//2 - ROW_HEIGHT//2)
 row_surface = pg.Surface((BOARD_WIDTH - 2*COLUMN_WIDTH, ROW_HEIGHT), pg.SRCALPHA)
 for x in range(BOARD_WIDTH - 2*COLUMN_WIDTH):
     d = abs(x - (BOARD_WIDTH - 2*COLUMN_WIDTH)/2)
@@ -157,6 +158,17 @@ exp_pos = (title_pos[0] + 200, 100)
 img_pos = (title_pos[0], 100)
 # endregion
 
+background = pg.Surface((WIDTH, HEIGHT))
+background.fill(WHITE)
+background.blits((
+    (deck_surface, deck1_rv),
+    (deck_surface, deck2_rv),
+    (graveyard_surface, gy1_rv),
+    (graveyard_surface, gy2_rv),
+    (row_surface, row_rv)
+))
+background = background.convert()
+
 # real images on the board. May be different from real data.
 rects : dict[TCG.GameComponent, pg.Rect] = {}
 
@@ -172,7 +184,13 @@ choice_image_dict['attack'] = pg.image.load(os.path.join(root_dir, 'images', 'ch
 
 hovering = set()
 holding = None
-choices : TCG.CHOICEDICT = {}
+choices : list[TCG.Choice] = []
+
+rects = {}
+rects[game.deck[player1]] = pg.Rect(deck1_rv, ZONE_SIZE)
+rects[game.deck[player2]] = pg.Rect(deck2_rv, ZONE_SIZE)
+rects[game.graveyard[player1]] = pg.Rect(gy1_rv, ZONE_SIZE)
+rects[game.graveyard[player2]] = pg.Rect(gy2_rv, ZONE_SIZE)
 
 def get_colliding_rect_keys():
     return {key for key in rects if rects[key].collidepoint(pg.mouse.get_pos()) and key is not holding}
@@ -238,11 +256,13 @@ def get_hovering_priority() -> TCG.GameComponent|None:
     
     return None
 
-def get_key():
+def get_key(drag:bool):
     global holding
-    keys = get_colliding_rect_keys() & {key for key in choices.keys()}
+    source_target = 'source' if drag else 'target'
+    keys = get_colliding_rect_keys() & {choice[source_target] for choice in choices}
     cards = {key for key in keys if isinstance(key, TCG.Card)}
     piles = {key for key in keys if isinstance(key, TCG.Pile)}
+    key : TCG.GameComponent|None = None
 
     if cards:
         piles_of_cards = {card.location for card in cards if card.location}
@@ -257,27 +277,17 @@ def get_key():
             else:
                 for card in reversed(pile.cards):
                     if card in cards:
-                        holding = card
+                        key = card
     elif len(piles) == 1:
-        holding = piles.pop()
-
+        key = piles.pop()
     else:
-        holding = None
+        key = None
     
-    return holding
+    holding = key if drag else None
+    return key
 
 def screen_generator():
-    def board_generator():
-        global rects
-        rects = {}
-        rects[game.deck[player1]] = SURF.blit(deck_surface, deck1_rv)
-        rects[game.deck[player2]] = SURF.blit(deck_surface, deck2_rv)
-        rects[game.graveyard[player1]] = SURF.blit(graveyard_surface, gy1_rv)
-        rects[game.graveyard[player2]] = SURF.blit(graveyard_surface, gy2_rv)
-        rects[game.hand[player1]] = SURF.blit(hand_img, hand1_rv, area=(0, 0, CARD_SIZE[0] + 20*(game.hand[player1].length - 1), ZONE_SIZE[1]))
-        rects[game.hand[player2]] = SURF.blit(hand_img, hand2_rv, area=(0, 0, CARD_SIZE[0] + 20*game.hand[player2].length, ZONE_SIZE[1]))
-
-    def column_generator():
+    def _column_generator():
         def get_column_rv(column:TCG.Column):
             length = len(game.row.columns)
             index = game.row.columns.index(column)
@@ -287,7 +297,7 @@ def screen_generator():
         for column in game.row.columns:
             rects[column] = SURF.blit(column_surface, get_column_rv(column))
     
-    def card_generator(card:TCG.Card, rv:list[int]|tuple[int, int], reversed:bool):
+    def _card_generator(card:TCG.Card, rv:list[int]|tuple[int, int], reversed:bool):
         '''rv: center!'''
         if card is holding:
             return False
@@ -300,20 +310,20 @@ def screen_generator():
         rects[card] = SURF.blit(card_surface, get_card_rv(rv))
         return True
     
-    def pile_generator(pile:TCG.Pile, reversed=False, margin:int=4):
+    def _pile_generator(pile:TCG.Pile, reversed=False, margin:int=4):
         rv = list(rects[pile].topleft)
         for card in pile.cards:
-            if card_generator(card, rv, reversed):
+            if _card_generator(card, rv, reversed):
                 rv[1] -= margin
     
-    def hand_generator(hand:TCG.Hand, reversed=False, margin:int = 20):
+    def _hand_generator(hand:TCG.Hand, reversed=False, margin:int = 20):
         rv = list(rects[hand].center)
         rv[0] -= (len(hand.cards) - 1)*margin
         for card in hand.cards:
-            card_generator(card, rv, reversed)
+            _card_generator(card, rv, reversed)
             rv[0] += margin
 
-    def explanation_generator():
+    def _explanation_generator():
         explanation = ['', '', None]
 
         def get_card_explanation(card:TCG.Card):
@@ -354,19 +364,20 @@ def screen_generator():
         if rendered_img:
             SURF.blit(rendered_img, img_pos)
 
-    SURF.fill(WHITE)
-    board_generator()
-    column_generator()
+    SURF.blit(background, (0, 0))
+    rects[game.hand[player1]] = SURF.blit(hand_img, hand1_rv, area=(0, 0, CARD_SIZE[0] + 20*(game.hand[player1].length - 1), ZONE_SIZE[1]))
+    rects[game.hand[player2]] = SURF.blit(hand_img, hand2_rv, area=(0, 0, CARD_SIZE[0] + 20*game.hand[player2].length, ZONE_SIZE[1]))
+    _column_generator()
 
     for pile in [game.deck[player2], game.graveyard[player2]]:
-        pile_generator(pile, reversed=True)
+        _pile_generator(pile, reversed=True)
 
     for pile in [game.graveyard[player1], game.deck[player1]]:
-        pile_generator(pile, reversed=False)
+        _pile_generator(pile, reversed=False)
 
     # HAND
-    hand_generator(game.hand[player1])
-    hand_generator(game.hand[player2], reversed=True)
+    _hand_generator(game.hand[player1])
+    _hand_generator(game.hand[player2], reversed=True)
 
     if isinstance(holding, TCG.Card):
         rects[holding] = SURF.blit(
@@ -374,7 +385,7 @@ def screen_generator():
             tuple(sum(elem) for elem in zip(pg.mouse.get_pos(), (-50, -70)))
             )
 
-    explanation_generator()
+    _explanation_generator()
 
 # Start
 gameplay = game.IO()
@@ -384,12 +395,10 @@ screen_generator()
 
 def calculate(message:TCG.INPUTTYPE):
     global choices
-    if message is None:
-        message = TCG.CANCEL
     result = gameplay.send(message)
     if isinstance(result, str):
-        choices = {}
-        pass    # Add Log Later!
+        choices = []
+        print(result)    # Add Log Later!
     else:
         choices = result
 
@@ -408,7 +417,7 @@ try:
                 if event.button == 3:
                     calculate(TCG.CANCEL)
                 elif not holding:
-                    result = calculate(get_key())
+                    result = calculate(get_key(drag=True))
                 else:
                     raise Exception('Tryed to click while dragging.')
 
@@ -416,16 +425,15 @@ try:
                 if event.button == 3 or not holding:
                     pass
                 else:
-                    result = calculate(get_key())
+                    result = calculate(get_key(drag=False))
 
         screen_generator()
         pg.display.update()
 except StopIteration as e:
-    pass
+    print(e.value)
 
 SURF.fill(WHITE)
-winner = game.opponent(game.loser).name if hasattr(game, 'loser') else None
-gameover_message = TITLE_FONT.render(f'{winner} Survives!', True, BLACK)
+gameover_message = TITLE_FONT.render(f'{game.opponent(game.current_player).name} Survives!', True, BLACK)
 SURF.blit(gameover_message, (SURF.get_width()//2 - gameover_message.get_width()//2,
                              SURF.get_height()//2 - gameover_message.get_height()//2))
 pg.display.update()
@@ -433,7 +441,7 @@ pg.display.update()
 watching = True
 while watching:
     for event in pg.event.get():
-        if event.type in [pg.QUIT, pg.MOUSEBUTTONDOWN, pg.MOUSEBUTTONUP]:
+        if event.type in [pg.QUIT, pg.MOUSEBUTTONDOWN]:
             watching = False
 
 pg.quit()
