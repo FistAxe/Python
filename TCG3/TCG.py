@@ -2,6 +2,10 @@ from typing import Literal, Type, Generator, Union, Any, TypedDict
 
 class Lose(str):
     pass
+
+class CheckPoint(str):
+    pass
+
 DONE = 'DONE'
 PROCESSRESULT = Union[Lose, Literal['DONE']]
 
@@ -17,7 +21,7 @@ INPUTTYPE = Union['GameComponent', Literal['Cancel'], None]
 COLORTYPE = Literal['R', 'Y', 'B']
 EFFECTTYPE = Literal['Idle', 'Declarative']
 TAGS = EFFECTTYPE|COLORTYPE|Literal['Rule']
-STATES = Literal['CHECK', 'PENDING', 'IDLE', 'PROCESS', 'ACTIVATE']
+STATES = Literal['CHECK', 'PENDING', 'IDLE', 'PROCESS', 'ACTIVATE', 'START']
 
 class Player:
     _cardlist : list['Card'] = []
@@ -25,14 +29,16 @@ class Player:
     def __init__(self, name:str) -> None:
         self._name = name
 
-    def game_init(self, game:'Game'):
+    def assign_game(self, game:'Game'):
         self._game = game
-        for card in self._cardlist:
-            card._game = game
 
     @property
     def name(self):
         return self._name
+
+    @property
+    def game(self):
+        return self._game
 
 class GameComponent:
     def __init__(self, game:'Game', name:str, owner:Player|None=None) -> None:
@@ -82,9 +88,11 @@ class Card(GameComponent):
     _name : str = "Dummy"
     _power : int|None = None
     _color : COLORTYPE|None = None
+    _image : str = ''
     _description : str = ''
     _location : 'Pile|None' = None
     _owner : Player
+    owner : Player
     _effectclasses : list[Type[Effect]] = []
 
     def __init__(self, owner:Player) -> None:
@@ -95,15 +103,15 @@ class Card(GameComponent):
 
     @property
     def name(self):
-        return self._name
+        return self._name if self._is_loc_revealed('top') else None
 
     @property
     def power(self):
-        return self._power
+        return self._power if self._is_loc_revealed('top') else None
     
     @property
     def color(self):
-        return self._color
+        return self._color if self._is_loc_revealed('top') else None
     
     @property
     def location(self):
@@ -111,19 +119,19 @@ class Card(GameComponent):
     
     @property
     def effects(self):
-        return self._effects
+        return self._effects if self._is_loc_revealed('bottom') else None
     
     @property
     def image(self):
-        return None
+        return self._image if self._is_loc_revealed('top') else None
     
     @property
     def description(self):
-        return self._description
+        return self._description if self._is_loc_revealed('top') else None
     
     @property
     def game(self):
-        return self._game
+        return self.owner.game
 
     def covered_type(self):
         if not self.location or isinstance(self.location, Deck):
@@ -135,6 +143,17 @@ class Card(GameComponent):
         else:
             return 'none'
         
+    def _is_loc_revealed(self, info_loc:Literal['top', 'bottom']):
+        if self.covered_type() == 'hidden':
+            assert isinstance(self.location, Hand)
+            return True if self.game.current_player is self.location.owner else False
+        elif self.covered_type() == 'none':
+            return True
+        elif self.covered_type() == 'full':
+            return False
+        elif self.covered_type() == 'half':
+            return True if info_loc == 'top' else False
+
     def move(self, pile:'Pile'):
         if self._location:
             self._location.cards.remove(self)
@@ -192,35 +211,39 @@ class Row(GameComponent):
         return self._new_column if len(self.columns) < 6 else None
 
 class Game:
+    status : STATES
+
     class DrawRule(Effect):
         _tags = {'Rule'}
-        _last_player = None
+        _last_turn_drawed = 0
         _drawed = False
 
         @property
         def activated(self):
-            if self._last_player is not self.game.current_player:
-                self._last_player = self.game.current_player
+            if self._last_turn_drawed < self.game.turn:
+                self._last_turn_drawed = self.game.turn
                 self._drawed = False
             return True if not self._drawed else False
         
         def process(self, choice:Choice|None=None):
             if not choice:
-                return Choice(
+                return [Choice(
                     action="PROCESS",
                     effect=self,
                     source=self.game.deck[self.game.current_player],
                     target=self.game.deck[self.game.current_player]
-                )
+                )]
 
             try:
                 draw_card = self.game.deck[self.game.current_player].cards[-1]
             except IndexError:
                 return Lose('Could not draw from the deck.')
             draw_card.move(self.game.hand[self.game.current_player])
+            self._drawed = True
             return DONE
 
     class LetRule(Effect):
+        _tags = {'Rule'}
         _card = None
         _column = None
 
@@ -258,15 +281,11 @@ class Game:
             else:
                 return self.game.row.columns
 
-    class DestroyRule(Effect):
-        pass
-
     def __init__(self, player1:Player, player2:Player) -> None:
         self._players = [player1, player2]
         self.current_player : Player = self._players[0]
-
-        for player in self._players:
-            player.game_init(self)
+        self.lead_effect : Effect|None = None
+        self.turn : int = 0
 
         self.row = Row(self, 'Row')
         self.deck = {self._players[0] : Deck(self, 'Deck 1', self._players[0]),
@@ -275,9 +294,12 @@ class Game:
                      self._players[1] : Graveyard(self, 'Graveyard 2', self._players[1])}
         self.hand = {self._players[0] : Hand(self, 'Hand 1', self._players[0]),
                      self._players[1] : Hand(self, 'Hand 2', self._players[1])}
-        self.rules : list[Effect] = [self.DestroyRule(self), self.DrawRule(self), self.LetRule(self)]
+        self.rules : list[Effect] = [self.DrawRule(self), self.LetRule(self)]
 
-        self.lead_effect : Effect|None = None
+        for player in self._players:
+            player.assign_game(self)
+            for card in player._cardlist:
+                card.move(self.deck[player])
 
     @property
     def players(self):
@@ -308,7 +330,10 @@ class Game:
         return sum(column.col_power(player) for column in self.row.columns)
 
     def get_effects(self):
-        return self.rules + [effect for card in self.cards() for effect in card.effects]
+        effects = self.rules
+        for effs in [card.effects for card in self.cards() if card.effects]:
+            effects.extend(effs)
+        return effects
 
     def get_next_active_effect(self):
         active_effects = [effect for effect in self.get_effects() if effect.activated]
@@ -326,26 +351,41 @@ class Game:
 
     def get_choices(self, status: str) -> list[Choice]:
         all_choices : list[Choice] = []
+
         for effect in self.get_effects():
-            if status =='PENDING' and (effect is self.lead_effect or 'Rule' in effect.tags):
+            if status =='PENDING' and effect.activated and (effect is self.lead_effect or 'Rule' in effect.tags):
                 choices = effect.process()
                 if isinstance(choices, list):
                     all_choices.extend(choices)
+            
             if status in ('PENDING', 'IDLE'):
                 choices = effect.activate()
                 if isinstance(choices, list):
                     all_choices.extend(choices)
+        
         return all_choices
 
-    def run(self) -> Generator[list[Choice]|str, Choice|Literal['Cancel']|None, Lose]:
+    def run(self) -> Generator[list[Choice]|CheckPoint|str, Choice|Literal['Cancel']|None, Lose]:
         """A generator that runs the TCG game loop."""
-        yield "Game Start"
+        choices : list[Choice]
+        choice : Choice|Literal['Cancel']|None
+
+        for player in self.players:
+            for _ in range(5):
+                try:
+                    draw_card = self.deck[player].cards[-1]
+                except IndexError:
+                    return Lose('Could not draw from the deck.')
+                draw_card.move(self.hand[player])
+
+        yield CheckPoint("Game Start")
         # Turn Loop
         while True:
-            choices = []
-            choice = None
-            self.status : STATES = 'CHECK'
             # Do turn start things
+            self.turn += 1
+            choice = None
+            self.status = 'CHECK'
+            yield 'TURN START'
 
             # Action Loop
             while True:
@@ -361,32 +401,38 @@ class Game:
                             self.lead_effect = new_lead_effect
                             yield f"Lead Effect change : {new_lead_effect}"
                         
-                        self.status = 'PENDING' if self.lead_effect else 'IDLE'
+                    self.status = 'PENDING' if self.lead_effect else 'IDLE'
 
                 elif self.status in ('PENDING', 'IDLE'):
                     initial_choices = self.get_choices(self.status)
                     if not initial_choices:
                         return Lose('No choice available.')
+                    else:
+                        choices = initial_choices
                     
-                    chosen = False
-                    while not chosen:
+                    while True:
                         choice = yield choices
                         
                         if not choice:
                             choices = initial_choices
+                        
                         elif choice == CANCEL:
                             self.status = 'CHECK'
+                            break
                         
                         elif choice['action'] == 'PROCESS':
                             self.status = 'PROCESS'
-                            chosen = True
+                            break
+                        
                         elif choice['action'] == 'ACTIVATE':
-                            additional_choices = choice['effect'].activate(choice)
+                            additional_choices = choice['effect'].activate(choice)  # Activation can have additional choices
                             if additional_choices:
                                 choices = additional_choices
                             else:
                                 self.status = 'CHECK'
-                                chosen = True
+                                break
+                    
+                    choices = []
 
                 elif self.status == "PROCESS":
                     if not isinstance(choice, dict):
@@ -411,7 +457,7 @@ class Game:
         ui_input: GameComponent|Literal['Cancel']|None
 
         game = self.run()  # Start the game engine generator
-        yield 'Game Start' 
+        yield 'Game Engine Start'
         
         try:
             # Game Loop
@@ -438,10 +484,10 @@ class Game:
                         selected_source = ui_input
                     elif ui_input == 'Cancel':
                         command = CANCEL
-
+                        print(f"Selected Choice: 'CANCEL'")
 
                     if not selected_source:  # If Canceled on Source Loop, back to the initial Choices
-                        yield ""
+                        print("Got None in the first IO!")
                         continue
 
                     # Target Loop - Drop
@@ -469,8 +515,8 @@ class Game:
                             print(f"IO Handler WARNING: Ambiguous choices found, which violates game rules. "
                                 f"Defaulting to the first one: {[c['effect'].name for c in matching_choices]}")
                         
-                        chosen_one = matching_choices[0]
-                        print(f"Selected Choice: '{chosen_one['effect'].name}'")
+                        command = matching_choices[0]
+                        print(f"Selected Choice: '{command['effect'].name}'")
 
         except StopIteration as e:
             return e.value

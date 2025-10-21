@@ -191,8 +191,20 @@ rects[game.deck[player2]] = pg.Rect(deck2_rv, ZONE_SIZE)
 rects[game.graveyard[player1]] = pg.Rect(gy1_rv, ZONE_SIZE)
 rects[game.graveyard[player2]] = pg.Rect(gy2_rv, ZONE_SIZE)
 
+class Vfx:
+    _duration : float
+    lifetime : float = 0
+
+    def __init__(self) -> None:
+        self.lifetime = self._duration
+    
+    def update(self, dt:float):
+        self.lifetime -= dt
+
+vfx_list : list[Vfx] = []
+
 def get_colliding_rect_keys():
-    return {key for key in rects if rects[key].collidepoint(pg.mouse.get_pos()) and key is not holding}
+    return {key for key in rects if rects[key].collidepoint(pg.mouse.get_pos())}
 
 def get_card_image(card:TCG.Card):
     covered_type = card.covered_type()
@@ -225,15 +237,23 @@ def get_card_image(card:TCG.Card):
             card_image_dict[type(card)] = real_image_bg.convert()
             card_image_active_dict[type(card)] = real_image_active_bg.convert()
 
-        real_image = card_image_dict[type(card)] if not any((effect in choices) for effect in card.effects) else card_image_active_dict[type(card)]
+
+        if card.effects and not any((effect in choices) for effect in card.effects):
+            real_image = card_image_dict[type(card)] 
+        else:
+            real_image = card_image_active_dict[type(card)]
 
         # Draw variable values on each frame
         if card.power:
             real_image.blit(get_power_image(card.power), POWER_COORD)
         
         return real_image
+    
     else:
-        return card_back_active if not any((effect in choices) for effect in card.effects) else card_back_image
+        if card.effects and not any((effect in choices) for effect in card.effects):
+            return card_back_active
+        else:
+            return card_back_image
 
 def get_hovering_priority() -> TCG.GameComponent|None:
     global hovering, holding
@@ -259,7 +279,7 @@ def get_key(drag:bool):
     global holding
     source_target = 'source' if drag else 'target'
     keys = get_colliding_rect_keys() & {choice[source_target] for choice in choices}
-    cards = {key for key in keys if isinstance(key, TCG.Card)}
+    cards = {key for key in keys if isinstance(key, TCG.Card) and not holding}
     piles = {key for key in keys if isinstance(key, TCG.Pile)}
     key : TCG.GameComponent|None = None
 
@@ -283,6 +303,7 @@ def get_key(drag:bool):
         key = None
     
     holding = key if drag else None
+    print(f'{"clicked" if drag else "dropped"} {"something" if key else "Nothing"}.')
     return key
 
 def screen_generator():
@@ -390,7 +411,6 @@ def screen_generator():
 gameplay = game.IO()
 next(gameplay)
 refresh = True
-screen_generator()
 
 def calculate(message:TCG.INPUTTYPE):
     global choices
@@ -403,39 +423,60 @@ def calculate(message:TCG.INPUTTYPE):
 
 try:
     while refresh:
-        for event in pg.event.get():
-            if event.type == pg.QUIT:
-                refresh = False
-                continue
-
-            if event.type == pg.MOUSEMOTION:
-                # Initialize hovering (As you moved.)
-                hovering = get_colliding_rect_keys()
-
-            if event.type == pg.MOUSEBUTTONDOWN:
-                if event.button == 3:
-                    calculate(TCG.CANCEL)
-                elif not holding:
-                    result = calculate(get_key(drag=True))
-                else:
-                    raise Exception('Tryed to click while dragging.')
-
-            if event.type == pg.MOUSEBUTTONUP:
-                if event.button == 3 or not holding:
-                    pass
-                else:
-                    result = calculate(get_key(drag=False))
-
+        dt = FPS.tick(60) / 1000
         screen_generator()
+        # --- VFX MODE ---
+        if vfx_list:
+            for event in pg.event.get():
+                if event.type == pg.QUIT:
+                    refresh = False
+                    continue
+                if event.type == pg.MOUSEBUTTONDOWN:
+                    vfx_list.clear() # Skip all visual effects
+                    continue
+        
+            else:
+                # Update and draw all active VFX
+                for vfx in vfx_list:
+                    vfx.update(dt)
+                vfx_list = [v for v in vfx_list if v.lifetime > 0]
+        
+        else:
+            for event in pg.event.get():
+                if event.type == pg.QUIT:
+                    refresh = False
+                    continue
+
+                if event.type == pg.MOUSEMOTION:
+                    # Initialize hovering (As you moved.)
+                    hovering = get_colliding_rect_keys()
+
+                if event.type == pg.MOUSEBUTTONDOWN:
+                    if event.button == 3:
+                        calculate(TCG.CANCEL)
+                    elif not holding:
+                        result = calculate(get_key(drag=True))
+                    else:
+                        raise Exception('Tryed to click while dragging.')
+
+                if event.type == pg.MOUSEBUTTONUP:
+                    if event.button == 3 or not holding:
+                        pass
+                    else:
+                        result = calculate(get_key(drag=False))
+
         pg.display.update()
-        FPS.tick(60)
+
 except StopIteration as e:
-    print(e.value)
+    reason = (e.value)
 
 SURF.fill(WHITE)
 gameover_message = TITLE_FONT.render(f'{game.opponent(game.current_player).name} Survives!', True, BLACK)
+gameover_reason = EXP_FONT.render(reason, True, BLACK)
 SURF.blit(gameover_message, (SURF.get_width()//2 - gameover_message.get_width()//2,
                              SURF.get_height()//2 - gameover_message.get_height()//2))
+SURF.blit(gameover_reason, (SURF.get_width()//2 - gameover_reason.get_width()//2,
+                            SURF.get_height()//2 + gameover_message.get_height() + gameover_reason.get_height()//2))
 pg.display.update()
 
 watching = True
