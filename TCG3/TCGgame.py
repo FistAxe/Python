@@ -35,7 +35,6 @@ pg.display.set_caption('TCG')
 SURF.fill(WHITE)
 
 FPS = pg.time.Clock()
-FPS.tick(60)
 
 # region Layout
 RIGHT_MARGINE = 500
@@ -429,6 +428,7 @@ try:
 
         screen_generator()
         pg.display.update()
+        FPS.tick(60)
 except StopIteration as e:
     print(e.value)
 
