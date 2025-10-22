@@ -19,8 +19,8 @@ CANCEL = 'Cancel'
 INPUTTYPE = Union['GameComponent', Literal['Cancel'], None]
 
 COLORTYPE = Literal['R', 'Y', 'B']
-EFFECTTYPE = Literal['Idle', 'Declarative']
-TAGS = EFFECTTYPE|COLORTYPE|Literal['Rule']
+EFFECTTYPE = Literal['Idle', 'Activate', 'Rule', 'Immediate']
+TAGS = EFFECTTYPE|COLORTYPE
 STATES = Literal['CHECK', 'PENDING', 'IDLE', 'PROCESS', 'ACTIVATE', 'START']
 
 class Player:
@@ -72,6 +72,10 @@ class Effect:
 
     @property
     def tags(self):
+        tags = self._tags.copy()
+        if hasattr(self, 'activate'):
+            tags.add("Activate")
+
         return self._tags
     
     @property
@@ -243,7 +247,7 @@ class Game:
             return DONE
 
     class LetRule(Effect):
-        _tags = {'Rule'}
+        _tags = {'Rule', 'Idle'}
         _card = None
         _column = None
 
@@ -252,10 +256,9 @@ class Game:
             return True if self.game.status == 'IDLE' else False
         
         def process(self, choice:Choice|None=None):
-            if self.game.status != 'IDLE':
-                return False
-            
             if not choice:
+                if self.game.status != 'IDLE':
+                    return False
                 choices : list[Choice] = []
                 for card in self.game.hand[self.game.current_player].cards:
                     possible_columns = self.lettable(card)
@@ -281,6 +284,35 @@ class Game:
             else:
                 return self.game.row.columns
 
+    class NewColumnRule(Effect):
+        _tags = {'Rule'}
+
+        @property
+        def activated(self):
+            if self.game.row.new_column and self.game.row.new_column.cards:
+                return True
+            else:
+                return False
+            
+        def process(self, choice: Choice|None=None) -> list[Choice]|Lose|Literal['DONE']:
+            return super().process(choice)
+            
+    class DeleteColumnRule(Effect):
+        _tags = {'Rule'}
+        _empty_column = None
+
+        @property
+        def activated(self):
+            self._empty_column = None
+            for column in self.game.row.columns:
+                if column.length == 0:
+                    self._empty_column = column
+                    return True
+            return False
+        
+        def process(self, choice: Choice | None = None) -> list[Choice] | Lose | Literal['DONE']:
+            return super().process(choice)
+
     def __init__(self, player1:Player, player2:Player) -> None:
         self._players = [player1, player2]
         self.current_player : Player = self._players[0]
@@ -294,7 +326,7 @@ class Game:
                      self._players[1] : Graveyard(self, 'Graveyard 2', self._players[1])}
         self.hand = {self._players[0] : Hand(self, 'Hand 1', self._players[0]),
                      self._players[1] : Hand(self, 'Hand 2', self._players[1])}
-        self.rules : list[Effect] = [self.DrawRule(self), self.LetRule(self)]
+        self.rules : list[Effect] = [self.DrawRule(self), self.LetRule(self), self.NewColumnRule(self)]
 
         for player in self._players:
             player.assign_game(self)
@@ -349,16 +381,20 @@ class Game:
         else:
             return False
 
-    def get_choices(self, status: str) -> list[Choice]:
+    def get_choices(self) -> list[Choice]:
         all_choices : list[Choice] = []
 
         for effect in self.get_effects():
-            if status =='PENDING' and effect.activated and (effect is self.lead_effect or 'Rule' in effect.tags):
-                choices = effect.process()
-                if isinstance(choices, list):
-                    all_choices.extend(choices)
+            if effect.activated:
+                rule_cond = self.status in ('PENDING', 'IDLE') and 'Rule' in effect.tags
+                lead_cond = self.status == 'PENDING' and effect is self.lead_effect
+
+                if rule_cond or lead_cond:
+                    choices = effect.process()
+                    if isinstance(choices, list):
+                        all_choices.extend(choices)
             
-            if status in ('PENDING', 'IDLE'):
+            if self.status in ('PENDING', 'IDLE'):
                 choices = effect.activate()
                 if isinstance(choices, list):
                     all_choices.extend(choices)
@@ -401,16 +437,23 @@ class Game:
                             self.lead_effect = new_lead_effect
                             yield f"Lead Effect change : {new_lead_effect}"
                         
-                    self.status = 'PENDING' if self.lead_effect else 'IDLE'
+                    if self.lead_effect:
+                        if 'Immediate' in self.lead_effect.tags:
+                            self.status = 'ACTIVATE'
+                        else:
+                            self.status = 'PENDING'
+                    else:
+                        self.status = 'IDLE'
 
                 elif self.status in ('PENDING', 'IDLE'):
-                    initial_choices = self.get_choices(self.status)
+                    initial_choices = self.get_choices()
                     if not initial_choices:
                         return Lose('No choice available.')
                     else:
                         choices = initial_choices
                     
                     while True:
+                        print(f'available choices: {choices}')
                         choice = yield choices
                         
                         if not choice:

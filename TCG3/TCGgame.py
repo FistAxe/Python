@@ -42,18 +42,23 @@ BOARD_MARGIN = 5
 BOARD_WIDTH = WIDTH - RIGHT_MARGINE - 2*BOARD_MARGIN
 LINE_WIDTH = 3
 CARD_SIZE = (75, 105)
-
-COLUMN_WIDTH = CARD_SIZE[0] + 10
-ROW_HEIGHT = CARD_SIZE[1] + 10
+ZONE_MARGIN = 3
+ZONE_SIZE = [CARD_SIZE[0] + 2*ZONE_MARGIN, CARD_SIZE[1] + 2*ZONE_MARGIN]
+GRID_MARGINE = 10
+GRID_SIZE = (CARD_SIZE[0] + 10, CARD_SIZE[1] + 10)
 COLUMN_SPACING = 10
+ROW_SPACING = 20
 
 ROW_MIDDLE = HEIGHT//2
-ROW_SPACING = 20
-ROW_UP = ROW_MIDDLE - ROW_HEIGHT - ROW_SPACING
-ROW_DOWN = ROW_MIDDLE + ROW_HEIGHT + ROW_SPACING
 
-COLUMN_LEFT = BOARD_MARGIN + COLUMN_WIDTH//2
-COLUMN_RIGHT = BOARD_MARGIN + BOARD_WIDTH - COLUMN_WIDTH//2
+ROW_UP = ROW_MIDDLE - GRID_SIZE[1] - ROW_SPACING
+ROW_DOWN = ROW_MIDDLE + GRID_SIZE[1] + ROW_SPACING
+
+COLUMN_LEFT = BOARD_MARGIN + GRID_SIZE[0]//2
+COLUMN_RIGHT = BOARD_MARGIN + BOARD_WIDTH - GRID_SIZE[0]//2
+
+HAND_SPACING = 20
+PILE_SPACING = 4
 # endregion
 
 # region Card
@@ -105,47 +110,41 @@ def get_speed_image(speed:int):
         speed_dict[speed] = SPEED_FONT.render(str(speed), False, BLACK)
     return speed_dict[speed]
 
-# region Zone
-ZONE_MARGIN = 2
-ZONE_SIZE = [CARD_SIZE[0] + 2*ZONE_MARGIN, CARD_SIZE[1] + 2*ZONE_MARGIN]
-# endregion
-
-def get_card_rv(zone_topleft_pos):
-    '''zone topleft pos -> rv (topleft)'''
-    return [zone_topleft_pos[0] + ZONE_MARGIN, zone_topleft_pos[1] + ZONE_MARGIN]
-
-def topleft(*rv:int):
-    return (rv[0] - COLUMN_WIDTH//2, rv[1] - ROW_HEIGHT//2)
+def topleft(center:tuple[int, int], size:Literal['GRID', 'ZONE', 'CARD']):
+    if size == 'CARD':
+        halfwidth = CARD_SIZE[0]//2
+        halfheight = CARD_SIZE[1]//2
+    elif size == 'ZONE':
+        halfwidth = ZONE_SIZE[0]//2
+        halfheight = ZONE_SIZE[1]//2
+    else:
+        halfwidth = GRID_SIZE[0]//2
+        halfheight = GRID_SIZE[1]//2
+    return (center[0] - halfwidth, center[1] - halfheight)
 
 # region Board
 # rv is topleft!
-deck1_rv = topleft(COLUMN_RIGHT, ROW_DOWN)
-deck2_rv = topleft(COLUMN_LEFT, ROW_UP)
+deck1_rv = topleft((COLUMN_RIGHT, ROW_DOWN), size='ZONE')
+deck2_rv = topleft((COLUMN_LEFT, ROW_UP), size='ZONE')
 deck_surface = pg.Surface(ZONE_SIZE)
 deck_surface.fill(WHITE)
 pg.draw.rect(deck_surface, BLACK, deck_surface.get_rect(), LINE_WIDTH)
 
-gy1_rv = topleft(COLUMN_RIGHT, ROW_MIDDLE)
-gy2_rv = topleft(COLUMN_LEFT, ROW_MIDDLE)
+gy1_rv = topleft((COLUMN_RIGHT, ROW_MIDDLE), size='ZONE')
+gy2_rv = topleft((COLUMN_LEFT, ROW_MIDDLE), size='ZONE')
 graveyard_surface = pg.Surface(ZONE_SIZE)
 graveyard_surface.fill(GY_BG)
 pg.draw.rect(graveyard_surface, BLACK, graveyard_surface.get_rect(), LINE_WIDTH)
 
-row_rv = (BOARD_MARGIN + COLUMN_WIDTH, HEIGHT//2 - ROW_HEIGHT//2)
-row_surface = pg.Surface((BOARD_WIDTH - 2*COLUMN_WIDTH, ROW_HEIGHT), pg.SRCALPHA)
-for x in range(BOARD_WIDTH - 2*COLUMN_WIDTH):
-    d = abs(x - (BOARD_WIDTH - 2*COLUMN_WIDTH)/2)
+row_rv = (BOARD_MARGIN + ZONE_SIZE[0], HEIGHT//2 - ZONE_SIZE[1]//2)
+row_surface = pg.Surface((BOARD_WIDTH - 2*ZONE_SIZE[0], ZONE_SIZE[1]), pg.SRCALPHA)
+for x in range(BOARD_WIDTH - 2*ZONE_SIZE[0]):
+    d = abs(x - (BOARD_WIDTH - 2*ZONE_SIZE[0])/2)
     transparancy = 1 - d/(BOARD_WIDTH - 2*ZONE_SIZE[0])*2
-    pg.draw.line(row_surface, (200, 200, 250, int(255*transparancy)), (x, 0), (x, ROW_HEIGHT - LINE_WIDTH))
+    pg.draw.line(row_surface, (200, 200, 250, int(255*transparancy)), (x, 0), (x, ZONE_SIZE[1] - LINE_WIDTH))
 
-column_surface = pg.Surface((COLUMN_WIDTH, 2*ROW_HEIGHT), pg.SRCALPHA)
-
-hand_img = pg.Surface((BOARD_WIDTH, ROW_HEIGHT))
-hand_img.fill(WHITE)
-hand1_center = (BOARD_MARGIN + BOARD_WIDTH//2, BOARD_MARGIN + ROW_HEIGHT//2)
-hand2_center = (BOARD_MARGIN + BOARD_WIDTH//2, HEIGHT - ROW_HEIGHT//2 - BOARD_MARGIN)
-hand1_rv = (hand1_center[0] - BOARD_WIDTH//2, hand1_center[1] - ROW_HEIGHT//2)
-hand2_rv = (hand2_center[0] - BOARD_WIDTH//2, hand2_center[1] - ROW_HEIGHT//2)
+hand1_center = (BOARD_MARGIN + BOARD_WIDTH//2, HEIGHT - ZONE_SIZE[1]//2 - BOARD_MARGIN)
+hand2_center = (BOARD_MARGIN + BOARD_WIDTH//2, BOARD_MARGIN + ZONE_SIZE[1]//2)
 # endregion
 
 # region Explanation
@@ -157,6 +156,7 @@ exp_pos = (title_pos[0] + 200, 100)
 img_pos = (title_pos[0], 100)
 # endregion
 
+# region Background
 background = pg.Surface((WIDTH, HEIGHT))
 background.fill(WHITE)
 background.blits((
@@ -167,10 +167,9 @@ background.blits((
     (row_surface, row_rv)
 ))
 background = background.convert()
+# endregion
 
-# real images on the board. May be different from real data.
-rects : dict[TCG.GameComponent, pg.Rect] = {}
-
+# Game Board Init
 player1 = TCGplayer.player1
 player2 = TCGplayer.player2
 game = TCG.Game(player1, player2)
@@ -182,15 +181,20 @@ choice_image_dict['default'] = pg.image.load(os.path.join(root_dir, 'images', 'c
 choice_image_dict['attack'] = pg.image.load(os.path.join(root_dir, 'images', 'choice_attack.png')).convert_alpha()
 
 hovering = set()
+top_hovering = None
 holding = None
 choices : list[TCG.Choice] = []
 
-rects = {}
-rects[game.deck[player1]] = pg.Rect(deck1_rv, ZONE_SIZE)
-rects[game.deck[player2]] = pg.Rect(deck2_rv, ZONE_SIZE)
-rects[game.graveyard[player1]] = pg.Rect(gy1_rv, ZONE_SIZE)
-rects[game.graveyard[player2]] = pg.Rect(gy2_rv, ZONE_SIZE)
+# Fixed Rects
+rects : dict[TCG.GameComponent, pg.Rect] = {
+    game.row : pg.Rect(row_rv, row_surface.get_size()),
+    game.deck[player1] : pg.Rect(deck1_rv, ZONE_SIZE),
+    game.deck[player2] : pg.Rect(deck2_rv, ZONE_SIZE),
+    game.graveyard[player1] : pg.Rect(gy1_rv, ZONE_SIZE),
+    game.graveyard[player2] : pg.Rect(gy2_rv, ZONE_SIZE),
+        }
 
+# region VFX
 class Vfx:
     _duration : float
     lifetime : float = 0
@@ -202,6 +206,7 @@ class Vfx:
         self.lifetime -= dt
 
 vfx_list : list[Vfx] = []
+# endregion
 
 def get_colliding_rect_keys():
     return {key for key in rects if rects[key].collidepoint(pg.mouse.get_pos())}
@@ -257,21 +262,23 @@ def get_card_image(card:TCG.Card):
 
 def get_hovering_priority() -> TCG.GameComponent|None:
     global hovering, holding
-    priority_order = [
-        TCG.Deck,
-        TCG.Card,
-        TCG.Graveyard,
-        TCG.Column
-    ]
-        
-    cards = [key for key in hovering if isinstance(key, TCG.Card) and key != holding]
-    if cards:
-        return cards.pop()
-    
-    for type in priority_order:
-        for key in hovering:
-            if isinstance(key, type):
-                return key
+    #if hovering:
+        #print(hovering)
+    priority_order = {
+        TCG.Deck : 0,
+        TCG.Card : 1,
+        TCG.Graveyard : 2,
+        TCG.Column : 3,
+        TCG.Hand : 4
+    }
+
+    piles = list({key for key in hovering if isinstance(key, TCG.Pile)})
+    for pile in sorted(piles, key=lambda k: priority_order[type(k)]):
+        cards = [card for card in hovering if isinstance(card, TCG.Card) and card.location is pile]
+        for card in reversed(pile.cards):
+            if card in cards:
+                return card
+        return pile
     
     return None
 
@@ -297,6 +304,7 @@ def get_key(drag:bool):
                 for card in reversed(pile.cards):
                     if card in cards:
                         key = card
+                        break
     elif len(piles) == 1:
         key = piles.pop()
     else:
@@ -307,18 +315,7 @@ def get_key(drag:bool):
     return key
 
 def screen_generator():
-    def _column_generator():
-        def get_column_rv(column:TCG.Column):
-            length = len(game.row.columns)
-            index = game.row.columns.index(column)
-            return (BOARD_MARGIN + BOARD_WIDTH//2 + (index - (length + COLUMN_SPACING)/2)*COLUMN_WIDTH,
-                    ROW_MIDDLE - ROW_HEIGHT//2)
-        
-        for column in game.row.columns:
-            rects[column] = SURF.blit(column_surface, get_column_rv(column))
-    
-    def _card_generator(card:TCG.Card, rv:list[int]|tuple[int, int], reversed:bool):
-        '''rv: center!'''
+    def _card_generator(card:TCG.Card, tl:tuple[int, int], reversed:bool):
         if card is holding:
             return False
         
@@ -327,21 +324,35 @@ def screen_generator():
         if reversed:
             card_surface = pg.transform.flip(card_surface, True, True)
         
-        rects[card] = SURF.blit(card_surface, get_card_rv(rv))
+        rects[card] = SURF.blit(card_surface, topleft(tl, size='CARD'))
         return True
     
-    def _pile_generator(pile:TCG.Pile, reversed=False, margin:int=4):
-        rv = list(rects[pile].topleft)
+    def _pile_generator(pile:TCG.Pile, reversed=False):
+        center = rects[pile].center
+        spacing = 0
         for card in pile.cards:
-            if _card_generator(card, rv, reversed):
-                rv[1] -= margin
+            if _card_generator(card, (center[0], center[1] - spacing), reversed):
+                spacing -= PILE_SPACING
     
-    def _hand_generator(hand:TCG.Hand, reversed=False, margin:int = 20):
-        rv = list(rects[hand].center)
-        rv[0] -= (len(hand.cards) - 1)*margin
+    def _hand_generator(player:TCG.Player, reversed=False):
+        hand = game.hand[player]
+        tot_hand_width = CARD_SIZE[0] + (hand.length - 1)*HAND_SPACING
+        hand_center = hand1_center if player is player1 else hand2_center
+        
+        rects[hand] = pg.Rect((hand_center[0] - tot_hand_width//2, hand_center[1] - CARD_SIZE[1]//2),
+                                           (tot_hand_width, CARD_SIZE[1]))
+        spacing = 0
         for card in hand.cards:
-            _card_generator(card, rv, reversed)
-            rv[0] += margin
+            _card_generator(card, (rects[hand].left + CARD_SIZE[0]//2 + spacing, rects[hand].centery), reversed)
+            spacing += HAND_SPACING
+
+    def _column_generator():
+        length = len(game.row.columns)
+        increment = GRID_SIZE[0] + COLUMN_SPACING
+
+        for i, column in enumerate(game.row.columns):
+            center = (BOARD_MARGIN + BOARD_WIDTH//2 - ((length-1)//2 + i)*increment, ROW_MIDDLE)
+            rects[column] = pg.Rect(topleft(center, size='GRID'))
 
     def _explanation_generator():
         explanation = ['', '', None]
@@ -366,7 +377,7 @@ def screen_generator():
                 discription = 'Used cards are here.'
             return [title, discription, img]
 
-        key = get_hovering_priority()
+        key = top_hovering
         if key:
             if isinstance(key, TCG.Card):
                 explanation = get_card_explanation(key)
@@ -385,8 +396,8 @@ def screen_generator():
             SURF.blit(rendered_img, img_pos)
 
     SURF.blit(background, (0, 0))
-    rects[game.hand[player1]] = SURF.blit(hand_img, hand1_rv, area=(0, 0, CARD_SIZE[0] + 20*(game.hand[player1].length - 1), ZONE_SIZE[1]))
-    rects[game.hand[player2]] = SURF.blit(hand_img, hand2_rv, area=(0, 0, CARD_SIZE[0] + 20*game.hand[player2].length, ZONE_SIZE[1]))
+
+    # Variable Rects
     _column_generator()
 
     for pile in [game.deck[player2], game.graveyard[player2]]:
@@ -396,8 +407,8 @@ def screen_generator():
         _pile_generator(pile, reversed=False)
 
     # HAND
-    _hand_generator(game.hand[player1])
-    _hand_generator(game.hand[player2], reversed=True)
+    _hand_generator(player1)
+    _hand_generator(player2, reversed=True)
 
     if isinstance(holding, TCG.Card):
         rects[holding] = SURF.blit(
@@ -411,6 +422,7 @@ def screen_generator():
 gameplay = game.IO()
 next(gameplay)
 refresh = True
+reason = None
 
 def calculate(message:TCG.INPUTTYPE):
     global choices
@@ -450,6 +462,7 @@ try:
                 if event.type == pg.MOUSEMOTION:
                     # Initialize hovering (As you moved.)
                     hovering = get_colliding_rect_keys()
+                    top_hovering = get_hovering_priority()
 
                 if event.type == pg.MOUSEBUTTONDOWN:
                     if event.button == 3:
