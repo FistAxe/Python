@@ -520,31 +520,33 @@ class Game:
                 while not command:
                     selected_source: GameComponent|None = None
                     selected_target: GameComponent|None = None
-                    
+
+                    # Drag Loop
                     ui_input = yield choices
-                    
+
+                    # If Canceled on Source Loop, back to the initial Choices
                     if isinstance(ui_input, GameComponent) and ui_input in {c['source'] for c in choices}:
                         selected_source = ui_input
                     elif ui_input == 'Cancel':
                         command = CANCEL
                         print(f"Selected Choice: 'CANCEL'")
 
-                    if not selected_source:  # If Canceled on Source Loop, back to the initial Choices
+                    if not selected_source:
                         print("Got None in the first IO!")
                         continue
-
-                    # Target Loop - Drop
+                    
+                    # Drop Loop
                     choices_from_source = [c for c in choices if c['source'] is selected_source]
                     ui_input = yield choices_from_source
-                        
+                    
                     # Cancel by drop -> No Meaning, back to Source Loop
                     if ui_input == 'Cancel' or ui_input is None:
                         continue
-                        
+                    
                     possible_targets = {c['target'] for c in choices_from_source}
                     if ui_input in possible_targets:
                         selected_target = ui_input
-
+                    
                     # Source + Target -> Resolve
                     if selected_source and selected_target:
                         matching_choices = [c for c in choices_from_source if c['target'] is selected_target]
