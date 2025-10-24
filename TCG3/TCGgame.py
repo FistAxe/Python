@@ -16,23 +16,25 @@ HEIGHT = 768
 # endregion
 
 # region Color
-WHITE = pg.Color(255, 255, 255)
-BLACK = pg.Color(0, 0, 0)
-DARK_BLUE = pg.Color(50, 50, 100)
-DARK_RED = pg.Color(100, 50, 50)
-BOARD_BG = pg.Color(230, 230, 255)
-ROW_BG = pg.Color(200, 200, 255)
-GY_BG = pg.Color(200, 200, 200)
+COLORS = {
+    'WHITE' : pg.Color(255, 255, 255),
+    'BLACK' : pg.Color(0, 0, 0),
+    'DARK_BLUE' : pg.Color(50, 50, 100),
+    'DARK_RED' : pg.Color(100, 50, 50),
+    'BOARD_BG' : pg.Color(230, 230, 255),
+    'ROW_BG' : pg.Color(200, 200, 255),
+    'GY_BG' : pg.Color(200, 200, 200),
 
-MANA_R = pg.Color(255, 50, 50)
-MANA_Y = pg.Color(200, 200, 50)
-MANA_B = pg.Color(50, 50, 255)
+    'MANA_R' : pg.Color(255, 50, 50),
+    'MANA_Y' : pg.Color(200, 200, 50),
+    'MANA_B' : pg.Color(50, 50, 255),
+        }
 # endregion
 
 # Screen Init
 SURF = pg.display.set_mode((WIDTH, HEIGHT))
 pg.display.set_caption('TCG')
-SURF.fill(WHITE)
+SURF.fill(COLORS['WHITE'])
 
 FPS = pg.time.Clock()
 
@@ -88,26 +90,26 @@ POWER_COORD = (4, CARD_SIZE[1] - 20)
 SPEED_COORD = (4, CARD_SIZE[1] - 40)
 power_dict: dict[int, pg.Surface] = {}
 speed_dict: dict[int, pg.Surface] = {}
-speed_dict[1] = SPEED_FONT.render('I', False, BLACK)
-speed_dict[2] = SPEED_FONT.render('II', False, BLACK)
-speed_dict[3] = SPEED_FONT.render('III', False, BLACK)
-speed_dict[4] = SPEED_FONT.render('IV', False, BLACK)
-speed_dict[5] = SPEED_FONT.render('V', False, BLACK)
-speed_dict[6] = SPEED_FONT.render('VI', False, BLACK)
-speed_dict[7] = SPEED_FONT.render('VII', False, BLACK)
-speed_dict[8] = SPEED_FONT.render('VIII', False, BLACK)
-speed_dict[9] = SPEED_FONT.render('IX', False, BLACK)
-speed_dict[10] = SPEED_FONT.render('X', False, BLACK)
+speed_dict[1] = SPEED_FONT.render('I', False, COLORS['BLACK'])
+speed_dict[2] = SPEED_FONT.render('II', False, COLORS['BLACK'])
+speed_dict[3] = SPEED_FONT.render('III', False, COLORS['BLACK'])
+speed_dict[4] = SPEED_FONT.render('IV', False, COLORS['BLACK'])
+speed_dict[5] = SPEED_FONT.render('V', False, COLORS['BLACK'])
+speed_dict[6] = SPEED_FONT.render('VI', False, COLORS['BLACK'])
+speed_dict[7] = SPEED_FONT.render('VII', False, COLORS['BLACK'])
+speed_dict[8] = SPEED_FONT.render('VIII', False, COLORS['BLACK'])
+speed_dict[9] = SPEED_FONT.render('IX', False, COLORS['BLACK'])
+speed_dict[10] = SPEED_FONT.render('X', False, COLORS['BLACK'])
 # endregion
 
 def get_power_image(power:int):
     if power not in power_dict:
-        power_dict[power] = POWER_FONT.render(str(power), False, BLACK)
+        power_dict[power] = POWER_FONT.render(str(power), False, COLORS['BLACK'])
     return power_dict[power]
 
 def get_speed_image(speed:int):
     if speed not in speed_dict:
-        speed_dict[speed] = SPEED_FONT.render(str(speed), False, BLACK)
+        speed_dict[speed] = SPEED_FONT.render(str(speed), False, COLORS['BLACK'])
     return speed_dict[speed]
 
 def topleft(center:tuple[int, int], size:Literal['GRID', 'ZONE', 'CARD']):
@@ -127,14 +129,14 @@ def topleft(center:tuple[int, int], size:Literal['GRID', 'ZONE', 'CARD']):
 deck1_rv = topleft((COLUMN_RIGHT, ROW_DOWN), size='ZONE')
 deck2_rv = topleft((COLUMN_LEFT, ROW_UP), size='ZONE')
 deck_surface = pg.Surface(ZONE_SIZE)
-deck_surface.fill(WHITE)
-pg.draw.rect(deck_surface, BLACK, deck_surface.get_rect(), LINE_WIDTH)
+deck_surface.fill(COLORS['WHITE'])
+pg.draw.rect(deck_surface, COLORS['BLACK'], deck_surface.get_rect(), LINE_WIDTH)
 
 gy1_rv = topleft((COLUMN_RIGHT, ROW_MIDDLE), size='ZONE')
 gy2_rv = topleft((COLUMN_LEFT, ROW_MIDDLE), size='ZONE')
 graveyard_surface = pg.Surface(ZONE_SIZE)
-graveyard_surface.fill(GY_BG)
-pg.draw.rect(graveyard_surface, BLACK, graveyard_surface.get_rect(), LINE_WIDTH)
+graveyard_surface.fill(COLORS['GY_BG'])
+pg.draw.rect(graveyard_surface, COLORS['BLACK'], graveyard_surface.get_rect(), LINE_WIDTH)
 
 row_rv = (BOARD_MARGIN + ZONE_SIZE[0], HEIGHT//2 - ZONE_SIZE[1]//2)
 row_surface = pg.Surface((BOARD_WIDTH - 2*ZONE_SIZE[0], ZONE_SIZE[1]), pg.SRCALPHA)
@@ -158,7 +160,7 @@ img_pos = (title_pos[0], 100)
 
 # region Background
 background = pg.Surface((WIDTH, HEIGHT))
-background.fill(WHITE)
+background.fill(COLORS['WHITE'])
 background.blits((
     (deck_surface, deck1_rv),
     (deck_surface, deck2_rv),
@@ -235,7 +237,7 @@ def get_card_image(card:TCG.Card):
                 real_image_bg.blit(img, IMAGE_COORD)
                 real_image_active_bg.blit(img, IMAGE_COORD)
             if card.name:
-                name = NAME_FONT.render(card.name, False, BLACK)
+                name = NAME_FONT.render(card.name, False, COLORS['BLACK'])
                 real_image_bg.blit(name, NAME_COORD)
                 real_image_active_bg.blit(img, NAME_COORD)
 
@@ -386,8 +388,8 @@ def screen_generator():
         else:
             explanation = ['No hovering', '', None]
 
-        rendered_title = TITLE_FONT.render(explanation[0], True, BLACK)
-        rendered_explanation = EXP_FONT.render(explanation[1], True, BLACK)
+        rendered_title = TITLE_FONT.render(explanation[0], True, COLORS['BLACK'])
+        rendered_explanation = EXP_FONT.render(explanation[1], True, COLORS['BLACK'])
         rendered_img = pg.transform.scale(explanation[2], (180, 240)) if explanation[2] != None else None
 
         SURF.blit(rendered_title, title_pos)
@@ -483,9 +485,9 @@ try:
 except StopIteration as e:
     reason = (e.value)
 
-SURF.fill(WHITE)
-gameover_message = TITLE_FONT.render(f'{game.opponent(game.current_player).name} Survives!', True, BLACK)
-gameover_reason = EXP_FONT.render(reason, True, BLACK)
+SURF.fill(COLORS['WHITE'])
+gameover_message = TITLE_FONT.render(f'{game.opponent(game.current_player).name} Survives!', True, COLORS['BLACK'])
+gameover_reason = EXP_FONT.render(reason, True, COLORS['BLACK'])
 SURF.blit(gameover_message, (SURF.get_width()//2 - gameover_message.get_width()//2,
                              SURF.get_height()//2 - gameover_message.get_height()//2))
 SURF.blit(gameover_reason, (SURF.get_width()//2 - gameover_reason.get_width()//2,
