@@ -41,14 +41,21 @@ class Player:
         return self._game
 
 class GameComponent:
-    def __init__(self, game:'Game', name:str, owner:Player|None=None) -> None:
+    _name : str = 'Dummy GC'
+
+    def __init__(self, game:'Game', name:str|None=None, owner:Player|None=None) -> None:
         self._game = game
-        self._name = name
+        if name:
+            self._name = name
         self._owner = owner
 
     @property
     def game(self):
         return self._game
+    
+    @property
+    def name(self):
+        return self._name
     
     @property
     def owner(self):
@@ -171,8 +178,10 @@ class Spell(Card):
     pass
 
 class Pile(GameComponent):
-    def __init__(self, game:'Game', name: str, owner:Player|None=None) -> None:
-        super().__init__(game, name, owner)
+    _name : str = 'Dummy Pile'
+
+    def __init__(self, game:'Game', name:str|None=None, owner:Player|None=None) -> None:
+        super().__init__(game, name=name, owner=owner)
         self._cards : list[Card] = []
 
     @property
@@ -193,6 +202,13 @@ class Hand(Pile):
     pass
 
 class Column(Pile):
+    @property
+    def index(self):
+        try:
+            return self.game.row.columns.index(self)
+        except IndexError:
+            raise Exception('This column is not in the row!')
+
     def col_power(self, player:Player):
         pow = 0
         for card in self.cards:
@@ -201,10 +217,13 @@ class Column(Pile):
         return pow
 
 class Row(GameComponent):
-    def __init__(self, game:'Game', name:str) -> None:
-        super().__init__(game, name)
+    class NewColumn(Column):
+        index : int|None = None
+
+    def __init__(self, game:'Game') -> None:
+        super().__init__(game)
         self._columns : list[Column] = []
-        self._new_column = Column(self.game, 'new column')
+        self._new_column = self.NewColumn(game)
 
     @property
     def columns(self):
@@ -212,7 +231,19 @@ class Row(GameComponent):
     
     @property
     def new_column(self):
-        return self._new_column if len(self.columns) < 6 else None
+        if len(self.columns) < 5:
+            return self._new_column
+        else:
+            return None
+    
+    def add_new_column(self):
+        if not self.new_column or self.new_column.index is None:
+            raise Exception('New Column Not Ready For Initiating!')
+
+        col = Column(self.game)
+        self._columns.insert(self.new_column.index, col)
+        self._new_column = self.NewColumn(self.game)
+        return col
 
 class Game:
     status : STATES
@@ -275,6 +306,8 @@ class Game:
             card, column = choice['source'], choice['target']
             if not isinstance(card, Card) or not isinstance(column, Column):
                 raise Exception('Wrong activation!')
+            elif column is self.game.row.new_column:
+                column = self.game.row.add_new_column()
             card.move(column)
             return DONE
 
@@ -284,49 +317,20 @@ class Game:
             else:
                 return self.game.row.columns
 
-    class NewColumnRule(Effect):
-        _tags = {'Rule'}
-
-        @property
-        def activated(self):
-            if self.game.row.new_column and self.game.row.new_column.cards:
-                return True
-            else:
-                return False
-            
-        def process(self, choice: Choice|None=None) -> list[Choice]|Lose|Literal['DONE']:
-            return super().process(choice)
-            
-    class DeleteColumnRule(Effect):
-        _tags = {'Rule'}
-        _empty_column = None
-
-        @property
-        def activated(self):
-            self._empty_column = None
-            for column in self.game.row.columns:
-                if column.length == 0:
-                    self._empty_column = column
-                    return True
-            return False
-        
-        def process(self, choice: Choice | None = None) -> list[Choice] | Lose | Literal['DONE']:
-            return super().process(choice)
-
     def __init__(self, player1:Player, player2:Player) -> None:
         self._players = [player1, player2]
         self.current_player : Player = self._players[0]
         self.lead_effect : Effect|None = None
         self.turn : int = 0
 
-        self.row = Row(self, 'Row')
+        self.row = Row(self)
         self.deck = {self._players[0] : Deck(self, 'Deck 1', self._players[0]),
                      self._players[1] : Deck(self, 'Deck 2', self._players[1])}
         self.graveyard = {self._players[0] : Graveyard(self, 'Graveyard 1', self._players[0]),
                      self._players[1] : Graveyard(self, 'Graveyard 2', self._players[1])}
         self.hand = {self._players[0] : Hand(self, 'Hand 1', self._players[0]),
                      self._players[1] : Hand(self, 'Hand 2', self._players[1])}
-        self.rules : list[Effect] = [self.DrawRule(self), self.LetRule(self), self.NewColumnRule(self)]
+        self.rules : list[Effect] = [self.DrawRule(self), self.LetRule(self)]
 
         for player in self._players:
             player.assign_game(self)
@@ -439,7 +443,7 @@ class Game:
                         
                     if self.lead_effect:
                         if 'Immediate' in self.lead_effect.tags:
-                            self.status = 'ACTIVATE'
+                            self.status = 'PROCESS'
                         else:
                             self.status = 'PENDING'
                     else:
@@ -453,7 +457,9 @@ class Game:
                         choices = initial_choices
                     
                     while True:
-                        print(f'available choices: {choices}')
+                        print(f'available choices:')
+                        for choice in choices:
+                            print(choice)
                         choice = yield choices
                         
                         if not choice:
@@ -479,7 +485,7 @@ class Game:
 
                 elif self.status == "PROCESS":
                     if not isinstance(choice, dict):
-                        raise Exception
+                        raise Exception('No Choice to Process!')
                     result = choice['effect'].process(choice)
                     if isinstance(result, Lose):
                         return result
