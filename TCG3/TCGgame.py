@@ -16,6 +16,7 @@ HEIGHT = 768
 COLORS = {
     'WHITE' : pg.Color(255, 255, 255),
     'BLACK' : pg.Color(0, 0, 0),
+    'DARK_GREY' : pg.Color(100, 100, 100),
     'DARK_BLUE' : pg.Color(50, 50, 100),
     'DARK_RED' : pg.Color(100, 50, 50),
     'BOARD_BG' : pg.Color(230, 230, 255),
@@ -60,6 +61,9 @@ PILE_SPACING = 4
 # endregion
 
 # region Card
+CARD_NAME_HEIGHT = 11
+CARD_IMAGE_HEIGHT = 90
+CARD_DESC_HEIGHT = CARD_SIZE[1] - CARD_NAME_HEIGHT - CARD_IMAGE_HEIGHT
 card_back_image = pg.image.load(os.path.join(root_dir, 'images', 'card_back.png')).convert()
 card_front_image = pg.image.load(os.path.join(root_dir, 'images', 'card_front.png')).convert()
 card_front_R = pg.image.load(os.path.join(root_dir, 'images', 'card_front_R.png')).convert()
@@ -126,13 +130,13 @@ deck1_rv = topleft((COLUMN_RIGHT, ROW_DOWN), size='ZONE')
 deck2_rv = topleft((COLUMN_LEFT, ROW_UP), size='ZONE')
 deck_surface = pg.Surface(ZONE_SIZE)
 deck_surface.fill(COLORS['WHITE'])
-pg.draw.rect(deck_surface, COLORS['BLACK'], deck_surface.get_rect(), LINE_WIDTH)
+pg.draw.rect(deck_surface, COLORS['DARK_GREY'], deck_surface.get_rect(), LINE_WIDTH)
 
 gy1_rv = topleft((COLUMN_RIGHT, ROW_MIDDLE), size='ZONE')
 gy2_rv = topleft((COLUMN_LEFT, ROW_MIDDLE), size='ZONE')
 graveyard_surface = pg.Surface(ZONE_SIZE)
 graveyard_surface.fill(COLORS['GY_BG'])
-pg.draw.rect(graveyard_surface, COLORS['BLACK'], graveyard_surface.get_rect(), LINE_WIDTH)
+pg.draw.rect(graveyard_surface, COLORS['DARK_GREY'], graveyard_surface.get_rect(), LINE_WIDTH)
 
 row_rv = (BOARD_MARGIN + ZONE_SIZE[0], HEIGHT//2 - ZONE_SIZE[1]//2)
 row_surface = pg.Surface((BOARD_WIDTH - 2*ZONE_SIZE[0], ZONE_SIZE[1]), pg.SRCALPHA)
@@ -143,7 +147,7 @@ for x in range(BOARD_WIDTH - 2*ZONE_SIZE[0]):
 
 zone_surface = pg.Surface(ZONE_SIZE)
 zone_surface.fill(COLORS['WHITE'])
-pg.draw.rect(zone_surface, COLORS['BLACK'], zone_surface.get_rect(), LINE_WIDTH)
+pg.draw.rect(zone_surface, COLORS['DARK_GREY'], zone_surface.get_rect(), LINE_WIDTH)
 
 hand1_center = (BOARD_MARGIN + BOARD_WIDTH//2, HEIGHT - ZONE_SIZE[1]//2 - BOARD_MARGIN)
 hand2_center = (BOARD_MARGIN + BOARD_WIDTH//2, BOARD_MARGIN + ZONE_SIZE[1]//2)
@@ -358,6 +362,7 @@ def screen_generator():
                 center = (BOARD_MARGIN + BOARD_WIDTH//2 - int(((len(columns)-1)/2 - i)*increment), ROW_MIDDLE)
                 rects[column] = pg.Rect(topleft(center, size='GRID'), (GRID_SIZE[0], GRID_SIZE[1]))
         
+        updown_spacing_height = (CARD_SIZE[1] - CARD_DESC_HEIGHT)//2
         columns = game.row.columns.copy()
         set_column_rects(columns)
         if game.row in hovering and game.row.new_column:
@@ -377,8 +382,11 @@ def screen_generator():
         for column in columns:
             SURF.blit(zone_surface, topleft(rects[column].center, size='ZONE'))
             for card in column.cards:
-                updown_spacing = -20 if card.owner is player1 else 20
-                activated_spacing = -5 if card.owner is player1 else 5
+                updown_spacing = - updown_spacing_height if card.owner is player1 else updown_spacing_height
+                if card.activated:
+                    activated_spacing = -5 if card.owner is player1 else 5
+                else:
+                    activated_spacing = 0
                 center = (rects[column].centerx, rects[column].centery + updown_spacing + activated_spacing)
                 _card_generator(card, center, card.owner is player2)
 
@@ -427,8 +435,9 @@ def screen_generator():
                 explanation = get_card_explanation(key)
             else:
                 explanation = get_gamecomponent_explanation(key)
+                
         else:
-            explanation = ['No hovering', '', None]
+            explanation = ['Selected Nothing', 'Place a cursor on any GameComponent to see Info.', None]
 
         rendered_title = TITLE_FONT.render(explanation[0], True, COLORS['BLACK'])
         rendered_explanation = EXP_FONT.render(explanation[1], True, COLORS['BLACK'])

@@ -102,9 +102,8 @@ class Card(GameComponent):
     _image : str = ''
     _description : str = ''
     _location : 'Pile|None' = None
-    _owner : Player
-    owner : Player
     _effectclasses : list[Type[Effect]] = []
+    owner : Player
 
     def __init__(self, owner:Player) -> None:
         self._owner = owner
@@ -143,6 +142,14 @@ class Card(GameComponent):
     @property
     def game(self):
         return self.owner.game
+    
+    @property
+    def activated(self):
+        if self.effects:
+            return True if any((eff.activated for eff in self.effects)) else False
+        else:
+            return False
+
 
     def covered_type(self):
         if not self.location or isinstance(self.location, Deck):
@@ -165,11 +172,17 @@ class Card(GameComponent):
         elif self.covered_type() == 'half':
             return True if info_loc == 'top' else False
 
-    def move(self, pile:'Pile'):
+    def move(self, loc:'Pile', index:int|None=None):
         if self._location:
             self._location.cards.remove(self)
-        self._location = pile
-        self._location.cards.append(self)
+            if isinstance(self._location, Column) and not self._location.cards:
+                self.game.row.columns.remove(self._location)
+
+        self._location = loc
+        if index:
+            self._location.cards.insert(index, self)
+        else:
+            self._location.cards.append(self)
         
 class Creature(Card):
     pass
