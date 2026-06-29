@@ -1,4 +1,25 @@
-from typing import Literal
+from enum import Enum, auto
+from dataclasses import dataclass
+from typing import Literal, Generator
+
+class Keywords(Enum):
+    CANCEL = auto()
+    """A cancel message."""
+    IDLE = auto()
+    SELECT = auto()
+    INIT = auto()
+
+    INACTIVE = auto()
+    READY = auto()
+    ACTIVE = auto()
+
+CANCEL = Keywords.CANCEL
+SELECT = Keywords.SELECT
+INIT = Keywords.INIT
+IDLE = Keywords.IDLE
+INACTIVE = Keywords.INACTIVE
+READY = Keywords.READY
+ACTIVE = Keywords.ACTIVE
 
 class PlayerInfo:
     def __init__(self, name, cardlist:list[type[Card]]):
@@ -8,22 +29,27 @@ class PlayerInfo:
 class Effect:
     def __init__(self, source:GameObject) -> None:
         self._source = source
+        self._stage = None
 
     @property
     def source(self):
         return self._source
     
-    def get_choice(self):
-        return Choice()
+    def check(self) -> list[Choice]|Literal[Keywords.INACTIVE, Keywords.ACTIVE]:
+        return INACTIVE
+
+class Execution:
+    def __init__(self, effect:Effect) -> None:
+        self._effect = effect
     
-    def eval(self):
-        pass
+    @property
+    def effect(self):
+        return self._effect
 
-    def execute(self):
-        pass
-
+@dataclass
 class Choice:
-    pass
+    effect: Effect
+    target: GameObject
 
 class End:
     pass
@@ -122,12 +148,14 @@ class Player(GameObject):
 
 class Board:
     def __init__(self, player1info:PlayerInfo, player2info:PlayerInfo):
+        self._state: Keywords = INIT
         self._rules = []
         self._player1 = Player(self, player1info)
         self._player2 = Player(self, player2info)
         self._current_player: Player = self._player1
         self._effectlist: list[Effect] = []
-        self._event_que = []
+        self._choicelist: list[Choice] = []
+        self._execution_stack: list[Effect] = []
 
         self.deck: dict[Player, Deck] = {}
         self.hand: dict[Player, Hand] = {}
@@ -161,8 +189,12 @@ class Board:
         return tuple(self._effectlist)
 
     @property
+    def choicelist(self):
+        return self._choicelist if self._state is SELECT else None
+
+    @property
     def event_que(self):
-        return tuple(self._event_que)
+        return tuple(self._execution_stack)
 
     def opponent(self, player:Player|None=None):
         if not player:
@@ -215,122 +247,70 @@ class Board:
                 power += p
         return power
 
-    def get_choices(self):
-        choices: list[Choice] = []
-        self._update()
-        for eff in self.effectlist:
-            choice = eff.get_choice()
-            if choice:
-                choices.append(choice)
-        return choices
-
-    def _update(self):
-        self._effectlist = []
-        for gameobject in self.gameobjects():
-            for effect in gameobject.effects:
-                self._effectlist.append(effect)
-
-    def _run(self):
+    def _run(self) -> Generator[str|Keywords, Choice|None, End]:
         chosen: Choice|None = None
         paused = None
-        self._event_que = []
+        self._execution_stack = []
 
         #turn start
         while True:
             while True:
                 chosen = None
-                for rule in self._rules:
-                    if rule:
-                        #do something
-                        continue
-                if self._event_que:
-                    paused = self._event_que[0]
-                    self._update()
-                    for effect in self._effectlist:
-                        if effect.eval():
-                            self._event_que.append(effect)
-                    if paused is self._event_que[0]:
-                        paused.execute()
+                if self._execution_stack:
+                    paused = self._execution_stack[0]
+                    self._effectlist = []
+                    for gameobject in self.gameobjects():
+                        for effect in gameobject.effects:
+                            self._effectlist.append(effect)
+                    for eff in self._effectlist:
+                        if eff not in self._execution_stack and eff.check() is ACTIVE:
+                            self._execution_stack.append(eff)
+                    if paused is self._execution_stack[0]:
+                        paused.check()
                     paused = None
                     continue
+
                 if self.get_total_power(self.current_player) > self.get_total_power(self.opponent()):
                     break
                 #Idle; gather choices
-                choices = self.get_choices()
-                if choices:
-                    chosen = yield choices
-                    self._event_que.append(chosen)
+                self._update()
+                for eff in self._effectlist:
+                    choice = eff.check()
+                    if isinstance(choice, Choice):
+                        self._choicelist.append(choice)
+                
+                if self._choicelist:
+                    self._state = SELECT
+                    chosen = yield
+                    self._execution_stack.append(chosen)
                 else:
                     return End()
             #back to the loop
 
     def IO(self):
-        command: Choice|Literal['Cancel']|None = None
-        ui_input: GameObject|Literal['Cancel']|None
+        engine_message: Keywords|str|End|None = None
+        ui_message: GameObject|Keywords|None = None
 
-        game = self._run()  # Start the game engine generator
+        engine = self._run()  # Start the game engine generator
+        next(engine)
         yield 'Game Engine Start'
         
         while True:
-            # String Ignorance Loop
-            while True:
-                ui_output = game.send(command)
-                if isinstance(ui_output, str):
-                    yield ui_output
-                    command = None
-                elif isinstance(ui_output, End):
-                    return ui_output
-                # Now list given
-                else:
-                    choices = ui_output
-                    break
+            # Log Loop
+            try:
+                engine_message = engine.send(ui_message)
+            except StopIteration as e:
+                end: End = e.value
+                return end
+            
+            if isinstance(engine_message, str):
+                yield engine_message
+                ui_message = None
+                continue
 
             # Command Loop
-            while not command:
-                selected_source: GameObject|None = None
-                selected_target: GameObject|None = None
+            while not ui_message:
+                ui_message = yield engine_message
 
-                # Drag Loop
-                ui_input = yield choices
-
-                # If Canceled on Source Loop, back to the initial Choices
-                if isinstance(ui_input, GameObject) and ui_input in {c['source'] for c in choices}:
-                    selected_source = ui_input
-                elif ui_input == 'Cancel':
-                    command = CANCEL
-                    print(f"Selected Choice: 'CANCEL'")
-
-                if not selected_source:
-                    print("Got None in the first IO!")
-                    continue
-                    
-                # Drop Loop
-                choices_from_source = [c for c in choices if c['source'] is selected_source]
-                ui_input = yield choices_from_source
-                    
-                # Cancel by drop -> No Meaning, back to Source Loop
-                if ui_input == 'Cancel' or ui_input is None:
-                    continue
-                    
-                possible_targets = {c['target'] for c in choices_from_source}
-                if ui_input in possible_targets:
-                    selected_target = ui_input
-                    
-                # Source + Target -> Resolve
-                if selected_source and selected_target:
-                    matching_choices = [c for c in choices_from_source if c['target'] is selected_target]
-
-                    if not matching_choices:
-                        print("IO Handler: Selection error. Resetting.")
-                        continue
-
-                    # Priority Warning
-                    if len(matching_choices) > 1:
-
-                        
-                        print(f"IO Handler WARNING: Ambiguous choices found, which violates game rules. "
-                              f"Defaulting to the first one: {[c['effect'].name for c in matching_choices]}")
-                        
-                    command = matching_choices[0]
-                    print(f"Selected Choice: '{command['effect'].name}'")
-
+            if isinstance(ui_message, GameObject):
+                ui_message = None
