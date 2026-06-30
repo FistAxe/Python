@@ -2,64 +2,85 @@ from enum import Enum, auto
 from dataclasses import dataclass
 from typing import Literal, Generator
 
-class Keywords(Enum):
-    CANCEL = auto()
-    """A cancel message."""
+class Keywords:
+    pass
+
+class BoardState(Keywords, Enum):
     IDLE = auto()
     SELECT = auto()
     SEARCHING = auto()
     EXECUTING = auto()
     INIT = auto()
 
+class EffectState(Keywords, Enum):
     INACTIVE = auto()
     READY = auto()
     ACTIVE = auto()
     DONE = auto()
 
-CANCEL = Keywords.CANCEL
-SELECT = Keywords.SELECT
-SEARCHING = Keywords.SEARCHING
-EXECUTING = Keywords.EXECUTING
-INIT = Keywords.INIT
-IDLE = Keywords.IDLE
-INACTIVE = Keywords.INACTIVE
-READY = Keywords.READY
-ACTIVE = Keywords.ACTIVE
-DONE = Keywords.DONE
+class ClickType(Keywords, Enum):
+    CLICK = auto()
+    DROP = auto()
+    CANCEL = auto()
+    """A cancel message."""
+
+SELECT = BoardState.SELECT
+SEARCHING = BoardState.SEARCHING
+EXECUTING = BoardState.EXECUTING
+INIT = BoardState.INIT
+IDLE = BoardState.IDLE
+INACTIVE = EffectState.INACTIVE
+READY = EffectState.READY
+ACTIVE = EffectState.ACTIVE
+DONE = EffectState.DONE
+CLICK = ClickType.CLICK
+DROP = ClickType.DROP
+CANCEL = ClickType.CANCEL
 
 class PlayerInfo:
     def __init__(self, name, cardlist:list[type[Card]]):
         self.name = name
         self.cardlist = cardlist
 
+class Stage:
+    def process(self) -> list[Choice]|Stage|Keywords:
+        return INACTIVE
+    
 class Effect:
     def __init__(self, source:GameObject) -> None:
         self._source = source
-        self._stage: Keywords|None = None
+        self._stages: list[Stage] = []
+        self._current_stage: Stage|None = None
 
     @property
     def source(self):
         return self._source
     
     @property
-    def stage(self):
-        return self._stage
+    def stages(self):
+        return self._stages
+
+    @property
+    def current_stage(self):
+        return self._current_stage
     
     def check(self) -> list[Choice]|Keywords|None:
-        return self.stage
-
-class Execution:
-    def __init__(self, effect:Effect) -> None:
-        self._effect = effect
-    
-    @property
-    def effect(self):
-        return self._effect
+        if not self.current_stage:
+            result = self.stages[0].process()
+        else:
+            result = self.current_stage.process()
+        
+        if isinstance(result, Stage):
+            self._current_stage = result
+            return ACTIVE
+        else:
+            return result
 
 @dataclass
 class Choice:
     effect: Effect
-    target: GameObject
+    click: GameObject
+    drop: GameObject
 
 class End:
     pass
@@ -257,8 +278,7 @@ class Board:
                 power += p
         return power
 
-    def _run(self) -> Generator[str|Keywords, Choice|None, End]:
-        chosen: Choice|None = None
+    def _run(self) -> Generator[str|Keywords, tuple[GameObject, GameObject], End]:
         self._execution_stack = []
 
         #turn start
@@ -267,34 +287,37 @@ class Board:
             while True:
                 self._state = SEARCHING
                 self._choicelist = []
-                chosen = None
                 if self._execution_stack:
                     executing_eff = self._execution_stack[0]
                 else:
                     executing_eff = None
                 
+                # execution stack search
                 for eff in self._effectlist:
-                    result = yield from eff.check()
+                    result = eff.check()
                     if eff not in self._execution_stack and result is ACTIVE:
                         self._execution_stack.append(eff)
                     elif isinstance(result, list):
                         self._choicelist.extend(result)
 
+                # stack changed
                 if (not executing_eff and self._execution_stack) or \
                    (executing_eff is not self._execution_stack[0]):
                     continue
                     
+                # stack unchanged and loaded
                 elif executing_eff and executing_eff is self._execution_stack[0]:
                     self._state = EXECUTING
-                    result = yield from executing_eff.check()
+                    result = executing_eff.check()
                     self._effectlist = [
-                        effect
+                        eff
                         for gameobject in self.gameobjects()
-                        for effect in gameobject.effects
+                        for eff in gameobject.effects
                         ]
-                    for i in range(len(self._execution_stack)-1, -1, -1):
-                        if self._execution_stack[i] not in self._effectlist:
-                            self._execution_stack.pop(i)
+                    self._execution_stack = [
+                        eff for eff in self._execution_stack
+                        if eff in self._effectlist
+                        ]
                     if result is DONE:
                         self._execution_stack.remove(executing_eff)
                     continue
@@ -305,22 +328,21 @@ class Board:
 
                 # Idle
                 if self.choicelist:
-                    chosen = yield from self._chooser(self.choicelist)
-                    self._execution_stack.append(chosen.effect)
+                    choicedict = {
+                        (choice.click, choice.drop) : choice
+                        for choice in self.choicelist
+                    }
+                    self._state = SELECT
+
+                    message = 'Choose!'
+                    drag = None
+                    while drag not in choicedict:
+                        drag = yield message
+                        message = 'Invalid Choice!'
+
+                    chosen = choicedict[drag].effect
+                    chosen.check()
+                    self._execution_stack.append(chosen)
                 else:
                     return End()
             #back to the loop
-
-    def _chooser(self, choices:list):        
-        self._state = SELECT
-        self._choicelist = choices
-        message = 'Choose!'
-        while True:
-            chosen = yield message
-            if isinstance(chosen, Choice):
-                if chosen in self._choicelist:
-                    return chosen
-                else:
-                    raise Exception
-            else:
-                message = 'Again!'
