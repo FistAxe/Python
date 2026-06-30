@@ -7,19 +7,25 @@ class Keywords(Enum):
     """A cancel message."""
     IDLE = auto()
     SELECT = auto()
+    SEARCHING = auto()
+    EXECUTING = auto()
     INIT = auto()
 
     INACTIVE = auto()
     READY = auto()
     ACTIVE = auto()
+    DONE = auto()
 
 CANCEL = Keywords.CANCEL
 SELECT = Keywords.SELECT
+SEARCHING = Keywords.SEARCHING
+EXECUTING = Keywords.EXECUTING
 INIT = Keywords.INIT
 IDLE = Keywords.IDLE
 INACTIVE = Keywords.INACTIVE
 READY = Keywords.READY
 ACTIVE = Keywords.ACTIVE
+DONE = Keywords.DONE
 
 class PlayerInfo:
     def __init__(self, name, cardlist:list[type[Card]]):
@@ -29,14 +35,18 @@ class PlayerInfo:
 class Effect:
     def __init__(self, source:GameObject) -> None:
         self._source = source
-        self._stage = None
+        self._stage: Keywords|None = None
 
     @property
     def source(self):
         return self._source
     
-    def check(self) -> list[Choice]|Literal[Keywords.INACTIVE, Keywords.ACTIVE]:
-        return INACTIVE
+    @property
+    def stage(self):
+        return self._stage
+    
+    def check(self) -> list[Choice]|Keywords|None:
+        return self.stage
 
 class Execution:
     def __init__(self, effect:Effect) -> None:
@@ -247,33 +257,54 @@ class Board:
                 power += p
         return power
 
+    def _search_chain_effect(self):
+        for eff in self._effectlist:
+            if eff not in self._execution_stack and eff.check() is ACTIVE:
+                self._execution_stack.append(eff)
+
     def _run(self) -> Generator[str|Keywords, Choice|None, End]:
         chosen: Choice|None = None
-        paused = None
         self._execution_stack = []
 
         #turn start
         while True:
+            self._current_player = self.opponent()
             while True:
+                self._state = SEARCHING
                 chosen = None
                 if self._execution_stack:
-                    paused = self._execution_stack[0]
-                    self._effectlist = []
-                    for gameobject in self.gameobjects():
-                        for effect in gameobject.effects:
-                            self._effectlist.append(effect)
-                    for eff in self._effectlist:
-                        if eff not in self._execution_stack and eff.check() is ACTIVE:
-                            self._execution_stack.append(eff)
-                    if paused is self._execution_stack[0]:
-                        paused.check()
-                    paused = None
+                    executing_eff = self._execution_stack[0]
+                    self._search_chain_effect()
+
+                    if executing_eff is not self._execution_stack[0]:
+                        continue
+                    
+                    self._state = EXECUTING
+                    result = executing_eff.check()
+                    self._effectlist = [
+                        effect
+                        for gameobject in self.gameobjects()
+                        for effect in gameobject.effects
+                    ]
+                    for i in range(len(self._execution_stack)-1, -1, -1):
+                        if self._execution_stack[i] not in self._effectlist:
+                            self._execution_stack.pop(i)
+                    if result is DONE:
+                        self._execution_stack.remove(executing_eff)
+                    elif isinstance(result, list):
+                        self._state = SELECT
+                        chosen = None
+                        self._choicelist = result
+                        while not chosen:
+                            chosen = yield SELECT
                     continue
 
+                # empty stack; check turn end
                 if self.get_total_power(self.current_player) > self.get_total_power(self.opponent()):
                     break
-                #Idle; gather choices
-                self._update()
+
+                # Idle; gather choices
+                self._choicelist = []
                 for eff in self._effectlist:
                     choice = eff.check()
                     if isinstance(choice, Choice):
@@ -281,14 +312,16 @@ class Board:
                 
                 if self._choicelist:
                     self._state = SELECT
-                    chosen = yield
-                    self._execution_stack.append(chosen)
+                    while not isinstance(chosen, Choice):
+                        chosen = yield SELECT
+                    self._execution_stack.append(chosen.effect)
                 else:
                     return End()
             #back to the loop
 
     def IO(self):
-        engine_message: Keywords|str|End|None = None
+        engine_output: Keywords|str|End|None = None
+        engine_input: Choice|Keywords|None = None
         ui_message: GameObject|Keywords|None = None
 
         engine = self._run()  # Start the game engine generator
@@ -298,19 +331,19 @@ class Board:
         while True:
             # Log Loop
             try:
-                engine_message = engine.send(ui_message)
+                engine_output = engine.send(engine_input)
             except StopIteration as e:
                 end: End = e.value
                 return end
             
-            if isinstance(engine_message, str):
-                yield engine_message
+            if isinstance(engine_output, str):
+                yield engine_output
                 ui_message = None
                 continue
 
             # Command Loop
             while not ui_message:
-                ui_message = yield engine_message
+                ui_message = yield engine_output
 
             if isinstance(ui_message, GameObject):
                 ui_message = None
