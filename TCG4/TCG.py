@@ -42,52 +42,58 @@ class PlayerInfo:
         self.name = name
         self.cardlist = cardlist
 
-class Stage:
-    def process(self) -> list[Choice]|Stage|Keywords:
-        return INACTIVE
-    
-class ActionStage(Stage):
-    pass
-
-class TriggerStage(Stage):
-    pass
-
-class StaticStage(Stage):
-    pass
-
 class Effect:
+    _stagetypes : list[type[Stage]]
+
     def __init__(self, source:GameObject) -> None:
         self._source = source
         self._stages: list[Stage] = []
-        self._current_stage: Stage|None = None
+        for st in self._stagetypes:
+            self._stages.append(st(self))
 
     @property
     def source(self):
         return self._source
     
     @property
-    def stages(self):
-        return self._stages
+    def is_in_chain(self):
+        for stage in self.source.board.execution_stack:
+            if stage.effect is self:
+                return True
+        return False
+    
+    def init(self) -> Stage|None:
+        return self._stages[0]
+
+class Stage:
+    def __init__(self, effect:Effect) -> None:
+        self._effect = effect
 
     @property
-    def current_stage(self):
-        return self._current_stage
-    
-    def check(self) -> list[Choice]|Keywords|None:
-        if not self.current_stage:
-            result = self.stages[0].process()
-        else:
-            result = self.current_stage.process()
-        
-        if isinstance(result, Stage):
-            self._current_stage = result
-            return ACTIVE
-        else:
-            return result
+    def effect(self):
+        return self._effect
+
+class TriggerStage(Stage):
+    def check(self) -> Stage|EffectState:
+        return INACTIVE
+
+class ChoiceStage(Stage):
+    _choices: list[Choice]
+
+    @property
+    def choices(self):
+        return self._choices
+
+    def choose(self, choice:Choice) -> Stage|EffectState:
+        return INACTIVE
+
+class EventStage(Stage):
+    def execute(self) -> Stage|EffectState:
+        return DONE
 
 @dataclass
 class Choice:
-    effect: Effect
+    choicestage: ChoiceStage
     click: GameObject
     drop: GameObject
 
@@ -195,7 +201,7 @@ class Board:
         self._current_player: Player = self._player1
         self._effectlist: list[Effect] = []
         self._choicelist: list[Choice] = []
-        self._execution_stack: list[Effect] = []
+        self._execution_stack: list[EventStage] = []
 
         self.deck: dict[Player, Deck] = {}
         self.hand: dict[Player, Hand] = {}
@@ -233,7 +239,7 @@ class Board:
         return self._choicelist if self._state is SELECT else None
 
     @property
-    def event_que(self):
+    def execution_stack(self):
         return tuple(self._execution_stack)
 
     def opponent(self, player:Player|None=None):
@@ -295,71 +301,77 @@ class Board:
             self._current_player = self.opponent()
 
             while True:
-                # effect -> activation|choice|movement|inactivation
-                # choice -> choice|movement
+                # choice(movement) -> effect
+                # effect -> effect | movement
                 # movement -> board refresh
-                if self._state is SEARCHING:
-                    self._choicelist = []
-                    if self._execution_stack:
-                        executing_eff = self._execution_stack[0]
-                    else:
-                        executing_eff = None
-                
-                    # execution stack search
-                    for eff in self._effectlist:
-                        result = eff.check()
-                        if eff not in self._execution_stack and result is ACTIVE:
-                            self._execution_stack.append(eff)
-                        elif isinstance(result, list):
-                            self._choicelist.extend(result)
 
-                    # stack changed
-                    if (not executing_eff and self._execution_stack) or \
-                    (executing_eff is not self._execution_stack[0]):
-                        continue
-                    
-                    # stack unchanged and loaded
-                    elif executing_eff and executing_eff is self._execution_stack[0]:
-                        self._state = EXECUTING
+                if self._execution_stack:
+                    executing_eff = self._execution_stack[-1]
                 
-                elif self._state is EXECUTING:
-                    executing_eff = self._execution_stack[0]
-                    result = executing_eff.check()
-                    self._effectlist = [
-                        eff
-                        for gameobject in self.gameobjects()
-                        for eff in gameobject.effects
-                        ]
-                    self._execution_stack = [
-                        eff for eff in self._execution_stack
-                        if eff in self._effectlist
-                        ]
-                    if result is DONE:
-                        self._execution_stack.remove(executing_eff)
-                    self._state = SEARCHING
+                # IDLE; Rule check
+                else:
+                    executing_eff = None
+                    if self.get_total_power(self.current_player) > self.get_total_power(self.opponent()):
+                        break
+
+                choicestages: list[ChoiceStage] = []
+                for eff in self._effectlist:
+                    result = eff.init()
+                    if isinstance(result, EventStage):
+                        self._execution_stack.append(result)
+                        break
+
+                    elif isinstance(result, ChoiceStage):
+                        choicestages.append(result)
+
+                # stack changed; search again
+                if (not executing_eff and self._execution_stack) or \
+                   (executing_eff is not self._execution_stack[-1]):
                     continue
-
-                # empty stack; check turn end
-                if self.get_total_power(self.current_player) > self.get_total_power(self.opponent()):
-                    break
-
-                # Idle
-                if self.choicelist:
+                
+                # Selection
+                while choicestages:
+                    self._choicelist = [
+                        choice
+                        for cs in choicestages
+                        for choice in cs.choices
+                        ]
                     choicedict = {
                         (choice.click, choice.drop) : choice
-                        for choice in self.choicelist
+                        for choice in self._choicelist
                     }
-                    self._state = SELECT
-
                     message = 'Choose!'
                     drag = None
                     while drag not in choicedict:
                         drag = yield message
                         message = 'Invalid Choice!'
 
-                    chosen = choicedict[drag].effect
-                    chosen.check()
-                    self._execution_stack.append(chosen)
+                    result = choicedict[drag].choicestage.choose(choicedict[drag])
+                    while isinstance(result, TriggerStage):
+                        result = result.check()
+                    if isinstance(result, ChoiceStage):
+                        choicestages = [result]
+                    elif isinstance(result, EventStage):
+                        self._execution_stack.append(result)
+                        break
+                
+                # No choice against execution - execution starts
+                if self.execution_stack:
+                    result = self._execution_stack[-1].execute()
+                    if result is DONE:
+                        self._execution_stack.pop()
+                    self._effectlist = [
+                            eff
+                            for gameobject in self.gameobjects()
+                            for eff in gameobject.effects
+                            ]
+                    self._execution_stack = [
+                            event for event in self._execution_stack
+                            if event.effect in self._effectlist
+                            ]
+
+
+                # No choice, no events
                 else:
                     return End()
             #back to the loop
