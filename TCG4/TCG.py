@@ -46,6 +46,15 @@ class Stage:
     def process(self) -> list[Choice]|Stage|Keywords:
         return INACTIVE
     
+class ActionStage(Stage):
+    pass
+
+class TriggerStage(Stage):
+    pass
+
+class StaticStage(Stage):
+    pass
+
 class Effect:
     def __init__(self, source:GameObject) -> None:
         self._source = source
@@ -284,30 +293,37 @@ class Board:
         #turn start
         while True:
             self._current_player = self.opponent()
-            while True:
-                self._state = SEARCHING
-                self._choicelist = []
-                if self._execution_stack:
-                    executing_eff = self._execution_stack[0]
-                else:
-                    executing_eff = None
-                
-                # execution stack search
-                for eff in self._effectlist:
-                    result = eff.check()
-                    if eff not in self._execution_stack and result is ACTIVE:
-                        self._execution_stack.append(eff)
-                    elif isinstance(result, list):
-                        self._choicelist.extend(result)
 
-                # stack changed
-                if (not executing_eff and self._execution_stack) or \
-                   (executing_eff is not self._execution_stack[0]):
-                    continue
+            while True:
+                # effect -> activation|choice|movement|inactivation
+                # choice -> choice|movement
+                # movement -> board refresh
+                if self._state is SEARCHING:
+                    self._choicelist = []
+                    if self._execution_stack:
+                        executing_eff = self._execution_stack[0]
+                    else:
+                        executing_eff = None
+                
+                    # execution stack search
+                    for eff in self._effectlist:
+                        result = eff.check()
+                        if eff not in self._execution_stack and result is ACTIVE:
+                            self._execution_stack.append(eff)
+                        elif isinstance(result, list):
+                            self._choicelist.extend(result)
+
+                    # stack changed
+                    if (not executing_eff and self._execution_stack) or \
+                    (executing_eff is not self._execution_stack[0]):
+                        continue
                     
-                # stack unchanged and loaded
-                elif executing_eff and executing_eff is self._execution_stack[0]:
-                    self._state = EXECUTING
+                    # stack unchanged and loaded
+                    elif executing_eff and executing_eff is self._execution_stack[0]:
+                        self._state = EXECUTING
+                
+                elif self._state is EXECUTING:
+                    executing_eff = self._execution_stack[0]
                     result = executing_eff.check()
                     self._effectlist = [
                         eff
@@ -320,6 +336,7 @@ class Board:
                         ]
                     if result is DONE:
                         self._execution_stack.remove(executing_eff)
+                    self._state = SEARCHING
                     continue
 
                 # empty stack; check turn end
