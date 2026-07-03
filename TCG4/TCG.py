@@ -47,9 +47,6 @@ class Effect:
 
     def __init__(self, source:GameObject) -> None:
         self._source = source
-        self._stages: list[Stage] = []
-        for st in self._stagetypes:
-            self._stages.append(st(self))
 
     @property
     def source(self):
@@ -63,17 +60,23 @@ class Effect:
         return False
     
     def init(self) -> Stage|None:
-        return self._stages[0]
+        return self._stagetypes[0](self)
 
 class Stage:
-    def __init__(self, effect:Effect) -> None:
+    def __init__(self, effect:Effect, **kwargs) -> None:
         self._effect = effect
 
     @property
     def effect(self):
         return self._effect
+    
+    def _get_stage(self, index:int, **kwargs):
+        return self.effect._stagetypes[index](self.effect, **kwargs)
 
 class TriggerStage(Stage):
+    def __init__(self, effect: Effect):
+        super().__init__(effect)
+
     def check(self) -> Stage|EffectState:
         return INACTIVE
 
@@ -90,6 +93,13 @@ class ChoiceStage(Stage):
 class EventStage(Stage):
     def execute(self) -> Stage|EffectState:
         return DONE
+
+class Rule(Effect):
+    def __init__(self, source:Board) -> None:
+        self._source = source
+        self._stages: list[Stage] = []
+        for st in self._stagetypes:
+            self._stages.append(st(self))
 
 @dataclass
 class Choice:
@@ -193,12 +203,34 @@ class Player(GameObject):
         return self.board.damagezone[self]
 
 class Board:
+    class TurnDrawRule(Rule):
+        class TurnDrawTriggerStage(TriggerStage):
+            def check(self):
+                return self._get_stage(1)
+        class TurnDrawChoiceStage(ChoiceStage):
+            def __init__(self, effect: Effect) -> None:
+                super().__init__(effect)
+                self._choices = [
+                    Choice(self, self.effect.source.board.current_player.deck,self.effect.source.board.current_player.deck)
+                ]
+            def choose(self):
+                pass
+        class TurnDrawEventStage(EventStage):
+            pass
+        _stagetypes = [
+            TurnDrawTriggerStage,
+            TurnDrawChoiceStage,
+            TurnDrawEventStage
+        ]
+
     def __init__(self, player1info:PlayerInfo, player2info:PlayerInfo):
         self._state: Keywords = INIT
         self._rules = []
         self._player1 = Player(self, player1info)
         self._player2 = Player(self, player2info)
         self._current_player: Player = self._player1
+
+        self._rulelist: list[Rule] = []
         self._effectlist: list[Effect] = []
         self._choicelist: list[Choice] = []
         self._execution_stack: list[EventStage] = []
@@ -360,6 +392,7 @@ class Board:
                     result = self._execution_stack[-1].execute()
                     if result is DONE:
                         self._execution_stack.pop()
+                    # Board Refresh
                     self._effectlist = [
                             eff
                             for gameobject in self.gameobjects()
@@ -369,7 +402,6 @@ class Board:
                             event for event in self._execution_stack
                             if event.effect in self._effectlist
                             ]
-
 
                 # No choice, no events
                 else:
