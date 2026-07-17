@@ -154,6 +154,9 @@ class OwnedPile(Pile):
     def player(self):
         return self._player
 
+class MainZone(OwnedPile):
+    pass
+
 class DamageZone(OwnedPile):
     pass
 
@@ -170,8 +173,14 @@ class Hand(OwnedPile):
 class GraveYard(OwnedPile):
     pass
 
-class Battleline(OwnedPile):
-    pass
+class Battleline(GameObject):
+    def __init__(self, board: Board) -> None:
+        super().__init__(board)
+        
+
+    @property
+    def zones(self):
+        return self._zones
 
 class Player(GameObject):
     def __init__(self, board:Board, playerinfo:PlayerInfo):
@@ -225,7 +234,7 @@ class Board:
 
     def __init__(self, player1info:PlayerInfo, player2info:PlayerInfo):
         self._state: Keywords = INIT
-        self._rules = []
+        self._rules = [self.TurnDrawRule(self),]
         self._player1 = Player(self, player1info)
         self._player2 = Player(self, player2info)
         self._current_player: Player = self._player1
