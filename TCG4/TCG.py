@@ -154,14 +154,32 @@ class OwnedPile(Pile):
     def player(self):
         return self._player
 
-class MainZone(OwnedPile):
-    pass
+class Row(GameObject):
+    def __init__(self, board: Board) -> None:
+        super().__init__(board)
+        self._cards: list[Card] = []
 
-class DamageZone(OwnedPile):
-    pass
+    @property
+    def cards(self):
+        return self._cards
 
-class ChainZone(Pile):
-    pass
+class OwnedRow(Row):
+    def __init__(self, board: Board, player:Player) -> None:
+        super().__init__(board)
+        self._player = player
+
+    @property
+    def player(self):
+        return self._player
+
+class InitiativeZone(GameObject):
+    def __init__(self, board: Board) -> None:
+        super().__init__(board)
+        self._card: Card|None = None
+
+    @property
+    def card(self):
+        return self._card
 
 class Deck(OwnedPile):
     def init_add(self, card:Card):
@@ -173,14 +191,14 @@ class Hand(OwnedPile):
 class GraveYard(OwnedPile):
     pass
 
-class Battleline(GameObject):
-    def __init__(self, board: Board) -> None:
-        super().__init__(board)
-        
+class ChainRow(Row):        
+    pass
 
-    @property
-    def zones(self):
-        return self._zones
+class OrderRow(OwnedRow):
+    pass
+
+class DrawRow(OwnedRow):
+    pass
 
 class Player(GameObject):
     def __init__(self, board:Board, playerinfo:PlayerInfo):
@@ -203,14 +221,6 @@ class Player(GameObject):
     def graveyard(self):
         return self.board.graveyard[self]
     
-    @property
-    def battleline(self):
-        return self.board.battleline[self]
-    
-    @property
-    def damagezone(self):
-        return self.board.damagezone[self]
-
 class Board:
     class TurnDrawRule(Rule):
         class TurnDrawTriggerStage(TriggerStage):
@@ -247,20 +257,17 @@ class Board:
         self.deck: dict[Player, Deck] = {}
         self.hand: dict[Player, Hand] = {}
         self.graveyard: dict[Player, GraveYard] = {}
-        self.battleline: dict[Player, Battleline] = {}
-        self.damagezone: dict[Player, tuple[DamageZone, DamageZone, DamageZone, DamageZone, DamageZone]] = {}
-        self.chainzone = ChainZone(self)
+        self.chainrow = ChainRow(self)
+        self.orderrow: dict[Player, OrderRow] = {}
+        self.drawrow: dict[Player, DrawRow] = {}
+        self.initiativezone = InitiativeZone(self)
 
         for player in self.players():
             self.deck[player] = Deck(self, player)
             self.hand[player] = Hand(self, player)
             self.graveyard[player] = GraveYard(self, player)
-            self.battleline[player] = Battleline(self, player)
-            self.damagezone[player] = (DamageZone(self, player),
-                                       DamageZone(self, player),
-                                       DamageZone(self, player),
-                                       DamageZone(self, player),
-                                       DamageZone(self, player))
+            self.orderrow[player] = OrderRow(self, player)
+            self.drawrow[player] = DrawRow(self, player)
             
         for card in player1info.cardlist:
             self.deck[self._player1].init_add(card(self, self._player1))
@@ -290,129 +297,186 @@ class Board:
 
     def players(self):
         return (self.current_player, self.opponent())
-
-    def piles(self, player:Player|None=None):
-        def _halfpiles(p:Player):
-            return (p.battleline,
-                    *p.damagezone,
-                    p.graveyard,
-                    p.deck,
-                    p.hand
-                    )
-        if player:
-            return _halfpiles(player)
-        else:
-            return (*_halfpiles(self.opponent()), *_halfpiles(self.current_player))
-
-    def cards(self, player:Player|None=None):
-        def _halfcards(player:Player):
-            return (card for pile in self.piles(player) for card in pile.cards)
-
-        return tuple(_halfcards(player)) if player else (*_halfcards(self.opponent()), *_halfcards(self.current_player))
         
-    def gameobjects(self, player:Player|None=None):
-        if player:
-            return (
-                    *self.piles(player),
-                    *self.cards(player)
-                    )
-        else:
-            return (
-                    *self.piles(self.opponent()),
-                    *self.cards(self.opponent()),
-                    *self.piles(self.current_player),
-                    *self.cards(self.current_player)
-                    )
+    def locations(self):
+        return (self.initiativezone,
+                self.chainrow,
+                self.orderrow[self.opponent()],
+                self.drawrow[self.opponent()],
+                self.graveyard[self.opponent()],
+                self.orderrow[self.current_player],
+                self.drawrow[self.current_player],
+                self.graveyard[self.current_player],
+                self.hand[self.opponent()],
+                self.hand[self.current_player],
+                self.deck[self.opponent()],
+                self.deck[self.current_player]
+                )
+    
+    def cards(self):
+        cards: list[Card] = []
+        for location in self.locations():
+            if isinstance(location, GraveYard) or isinstance(location, Hand) or isinstance(location, Row):
+                cards.extend(location.cards)
+            elif isinstance(location, InitiativeZone) and location.card:
+                cards.append(location.card)
+        return tuple(cards)
+    
+    def gameobjects(self):
+        return self.locations() + self.cards()
 
-    def get_total_power(self, player:Player) -> int:
-        if player not in self.players():
-            raise Exception()
-        power = 0
-        for card in self.cards(player):
-            p = card.get_power()
-            if type(p) is int:
-                power += p
-        return power
+    def _run(self) -> Generator[str | Keywords, tuple[GameObject, GameObject], End]:
+        def refresh_effects() -> None:
+            effects: list[Effect] = list(self._rulelist)
+            effects.extend(
+                effect
+                for gameobject in self.gameobjects()
+                for effect in gameobject.effects
+            )
+            self._effectlist = effects
 
-    def _run(self) -> Generator[str|Keywords, tuple[GameObject, GameObject], End]:
+        def check_triggers(result: Stage | EffectState) -> Stage | EffectState:
+            while isinstance(result, TriggerStage):
+                result = result.check()
+            return result
+
         self._execution_stack = []
+        self._choicelist = []
+        continuation_choices: list[ChoiceStage] = []
+        refresh_effects()
 
-        #turn start
         while True:
+            # Receiving the turn means receiving pressure.
             self._current_player = self.opponent()
+            self._state = IDLE
 
             while True:
-                # choice(movement) -> effect
-                # effect -> effect | movement
-                # movement -> board refresh
+                # The current player has overcome the opponent's Initiative.
+                if (
+                    not self._execution_stack
+                    and not continuation_choices
+                    and self.get_total_power(self.current_player)
+                    > self.get_total_power(self.opponent())
+                ):
+                    break
 
-                if self._execution_stack:
-                    executing_eff = self._execution_stack[-1]
-                
-                # IDLE; Rule check
-                else:
-                    executing_eff = None
-                    if self.get_total_power(self.current_player) > self.get_total_power(self.opponent()):
-                        break
+                self._state = SEARCHING
+                executing_stage = (self._execution_stack[0] if self._execution_stack else None)
 
-                choicestages: list[ChoiceStage] = []
-                for eff in self._effectlist:
-                    result = eff.init()
+                found_event: bool = False
+                discovered_choices: list[ChoiceStage] = []
+
+                for effect in tuple(self._effectlist):
+                    result = effect.init()
+
                     if isinstance(result, EventStage):
-                        self._execution_stack.append(result)
+                        # Index 0 is always the next stage to execute.
+                        self._execution_stack.insert(0, result)
+                        found_event = True
                         break
 
                     elif isinstance(result, ChoiceStage):
-                        choicestages.append(result)
+                        discovered_choices.append(result)
 
-                # stack changed; search again
-                if (not executing_eff and self._execution_stack) or \
-                   (executing_eff is not self._execution_stack[-1]):
+                # A newly opened event may itself receive responses.
+                if found_event:
                     continue
-                
-                # Selection
-                while choicestages:
+
+                # A continuation belonging to an executing effect takes precedence
+                # over unrelated voluntary choices.
+                choice_stages = (
+                    continuation_choices
+                    if continuation_choices
+                    else discovered_choices
+                )
+                continuation_choices = []
+
+                while choice_stages:
+                    self._state = SELECT
+
                     self._choicelist = [
                         choice
-                        for cs in choicestages
-                        for choice in cs.choices
-                        ]
-                    choicedict = {
-                        (choice.click, choice.drop) : choice
+                        for stage in choice_stages
+                        for choice in stage.choices
+                    ]
+
+                    choice_by_movement = {
+                        (choice.click, choice.drop): choice
                         for choice in self._choicelist
                     }
-                    message = 'Choose!'
-                    drag = None
-                    while drag not in choicedict:
-                        drag = yield message
-                        message = 'Invalid Choice!'
 
-                    result = choicedict[drag].choicestage.choose(choicedict[drag])
-                    while isinstance(result, TriggerStage):
-                        result = result.check()
-                    if isinstance(result, ChoiceStage):
-                        choicestages = [result]
-                    elif isinstance(result, EventStage):
-                        self._execution_stack.append(result)
+                    if not choice_by_movement:
                         break
-                
-                # No choice against execution - execution starts
-                if self.execution_stack:
-                    result = self._execution_stack[-1].execute()
-                    if result is DONE:
-                        self._execution_stack.pop()
-                    # Board Refresh
-                    self._effectlist = [
-                            eff
-                            for gameobject in self.gameobjects()
-                            for eff in gameobject.effects
-                            ]
-                    self._execution_stack = [
-                            event for event in self._execution_stack
-                            if event.effect in self._effectlist
-                            ]
 
-                # No choice, no events
-                else:
-                    return End()
-            #back to the loop
+                    message = "Choose!"
+                    movement = None
+
+                    while movement not in choice_by_movement:
+                        movement = yield message
+                        message = "Invalid Choice!"
+
+                    selected = choice_by_movement[movement]
+                    result = check_triggers(
+                        selected.choicestage.choose(selected)
+                    )
+
+                    if isinstance(result, ChoiceStage):
+                        # The current procedure requires another movement.
+                        choice_stages = [result]
+                        continue
+
+                    if isinstance(result, EventStage):
+                        self._execution_stack.insert(0, result)
+                        found_event = True
+                        break
+
+                    raise RuntimeError(
+                        "ChoiceStage.choose() must lead to another Stage."
+                    )
+
+                self._choicelist = []
+
+                # Search again before executing the newly declared event, allowing
+                # other effects to respond to it.
+                if found_event:
+                    continue
+
+                if self._execution_stack:
+                    self._state = EXECUTING
+                    stage = self._execution_stack[0]
+                    result = stage.execute()
+
+                    # Remove the stage that has just executed before refreshing.
+                    if self._execution_stack and self._execution_stack[0] is stage:
+                        self._execution_stack.pop(0)
+
+                    # Only EventStage execution is allowed to change the board.
+                    refresh_effects()
+                    live_effects = set(self._effectlist)
+
+                    self._execution_stack = [
+                        pending
+                        for pending in self._execution_stack
+                        if pending.effect in live_effects
+                    ]
+
+                    result = check_triggers(result)
+
+                    if isinstance(result, EventStage):
+                        if result.effect in live_effects:
+                            self._execution_stack.insert(0, result)
+
+                    elif isinstance(result, ChoiceStage):
+                        if result.effect in live_effects:
+                            continuation_choices = [result]
+
+                    elif result is not DONE and result is not INACTIVE:
+                        raise RuntimeError(
+                            f"Unexpected EventStage result: {result!r}"
+                        )
+
+                    continue
+
+                # No legal movement and no pending execution means defeat.
+                self._state = IDLE
+                return End()
