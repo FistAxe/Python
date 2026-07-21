@@ -366,32 +366,36 @@ class Board:
                         elif isinstance(result, ChoiceStage):
                             choicestages.append(result)
 
-                    # Filled choicestages = Choice must be choosed BEFORE the execution
                     if choicestages:
-                        self._choicelist = [
-                            choice
-                            for stage in choicestages
-                            for choice in stage.choices
-                        ]
+                        break
 
-                        self._choicedict = {
-                            (choice.click, choice.drop): choice
-                            for choice in self._choicelist
-                        }
+                    pass
 
-                        message = "Select!"
-                        while True:
-                            player_input = yield message
-                            if player_input in self._choicedict:
-                                player_choice = self._choicedict[player_input]
-                                break
-                            else:
-                                message = "Wrong Selection!"
-                        
-                        next_stage = player_choice.choicestage.choose(player_choice)
-                        if isinstance(next_stage, PlayerMovement):
-                            pass
-                        elif isinstance(next_stage, ChoiceStage):
+                # Choice!
+                self._choicelist = [
+                    choice
+                    for stage in choicestages
+                    for choice in stage.choices
+                    ]
+
+                self._choicedict = {
+                    (choice.click, choice.drop): choice
+                    for choice in self._choicelist
+                    }
+
+                message = "Select!"
+                while True:
+                    player_input = yield message
+                    if player_input in self._choicedict:
+                        player_choice = self._choicedict[player_input]
+                        break
+                    else:
+                        message = "Wrong Selection!"
+                    
+                next_stage = player_choice.choicestage.choose(player_choice)
+                if isinstance(next_stage, PlayerMovement):
+                    pass
+                elif isinstance(next_stage, ChoiceStage):
                             
 
                 # No legal movement and no pending execution means defeat.
