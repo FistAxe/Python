@@ -345,11 +345,12 @@ class Board:
         continuation_choices: list[ChoiceStage] = []
         refresh_effects()
 
+        # Turn Loop
         while True:
-            # Receiving the turn means receiving pressure.
             self._current_player = self.opponent()
             self._state = IDLE
 
+            # Event Loop
             while True:
                 # The current player has overcome the opponent's Initiative.
                 if (
@@ -360,75 +361,59 @@ class Board:
                 ):
                     break
 
-                self._state = SEARCHING
-                executing_stage = (self._execution_stack[0] if self._execution_stack else None)
+                # Search Loop
+                while True:
+                    executing_stage = (self._execution_stack[0] if self._execution_stack else None)
+                    choicestages: list[ChoiceStage] = []
 
-                found_event: bool = False
-                discovered_choices: list[ChoiceStage] = []
+                    for effect in tuple(self._effectlist):
+                        result = effect.init() # Let effects themselve handle recursive activation
 
-                for effect in tuple(self._effectlist):
-                    result = effect.init()
+                        if isinstance(result, EventStage):
+                            self._execution_stack.insert(0, result)
+                            continue
 
-                    if isinstance(result, EventStage):
-                        # Index 0 is always the next stage to execute.
-                        self._execution_stack.insert(0, result)
-                        found_event = True
-                        break
+                        elif isinstance(result, ChoiceStage):
+                            choicestages.append(result)
 
-                    elif isinstance(result, ChoiceStage):
-                        discovered_choices.append(result)
+                    # Choice Loop
+                    # Filled choicestages = Choice must be choosed BEFORE the execution
+                    while choicestages:
+                        self._choicelist = [
+                            choice
+                            for stage in choice_stages
+                            for choice in stage.choices
+                        ]
 
-                # A newly opened event may itself receive responses.
-                if found_event:
-                    continue
+                        self._choicedict = {
+                            (choice.click, choice.drop): choice
+                            for choice in self._choicelist
+                        }
 
-                # A continuation belonging to an executing effect takes precedence
-                # over unrelated voluntary choices.
-                choice_stages = (
-                    continuation_choices
-                    if continuation_choices
-                    else discovered_choices
-                )
-                continuation_choices = []
+                        # No available choices
+                        if not self._choicedict:
+                            break
 
-                while choice_stages:
-                    self._state = SELECT
+                        message = "Choose!"
+                        movement = None
 
-                    self._choicelist = [
-                        choice
-                        for stage in choice_stages
-                        for choice in stage.choices
-                    ]
+                        # IO Loop
+                        while movement not in self._choicedict:
+                            movement = yield message
+                            message = "Invalid Choice!"
 
-                    choice_by_movement = {
-                        (choice.click, choice.drop): choice
-                        for choice in self._choicelist
-                    }
+                        selected = self._choicedict[movement]
+                        result = check_triggers(selected.choicestage.choose(selected))
 
-                    if not choice_by_movement:
-                        break
+                        if isinstance(result, ChoiceStage):
+                            # The current procedure requires another movement.
+                            choicestages = [result]
+                            continue
 
-                    message = "Choose!"
-                    movement = None
-
-                    while movement not in choice_by_movement:
-                        movement = yield message
-                        message = "Invalid Choice!"
-
-                    selected = choice_by_movement[movement]
-                    result = check_triggers(
-                        selected.choicestage.choose(selected)
-                    )
-
-                    if isinstance(result, ChoiceStage):
-                        # The current procedure requires another movement.
-                        choice_stages = [result]
-                        continue
-
-                    if isinstance(result, EventStage):
-                        self._execution_stack.insert(0, result)
-                        found_event = True
-                        break
+                        if isinstance(result, EventStage):
+                            self._execution_stack.insert(0, result)
+                            found_event = True
+                            break
 
                     raise RuntimeError(
                         "ChoiceStage.choose() must lead to another Stage."
