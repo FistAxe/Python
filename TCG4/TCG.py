@@ -94,6 +94,9 @@ class EventStage(Stage):
     def execute(self) -> Stage|EffectState:
         return DONE
 
+class PlayerMovement(EventStage):
+    pass
+
 class Rule(Effect):
     def __init__(self, source:Board) -> None:
         self._source = source
@@ -335,14 +338,9 @@ class Board:
             )
             self._effectlist = effects
 
-        def check_triggers(result: Stage | EffectState) -> Stage | EffectState:
-            while isinstance(result, TriggerStage):
-                result = result.check()
-            return result
-
         self._execution_stack = []
         self._choicelist = []
-        continuation_choices: list[ChoiceStage] = []
+        choicestages: list[ChoiceStage] = []
         refresh_effects()
 
         # Turn Loop
@@ -352,19 +350,11 @@ class Board:
 
             # Event Loop
             while True:
-                # The current player has overcome the opponent's Initiative.
-                if (
-                    not self._execution_stack
-                    and not continuation_choices
-                    and self.get_total_power(self.current_player)
-                    > self.get_total_power(self.opponent())
-                ):
-                    break
 
                 # Search Loop
                 while True:
-                    executing_stage = (self._execution_stack[0] if self._execution_stack else None)
-                    choicestages: list[ChoiceStage] = []
+                    executing_stage = self._execution_stack[0] if self._execution_stack else None
+                    choicestages = []
 
                     for effect in tuple(self._effectlist):
                         result = effect.init() # Let effects themselve handle recursive activation
@@ -376,12 +366,11 @@ class Board:
                         elif isinstance(result, ChoiceStage):
                             choicestages.append(result)
 
-                    # Choice Loop
                     # Filled choicestages = Choice must be choosed BEFORE the execution
-                    while choicestages:
+                    if choicestages:
                         self._choicelist = [
                             choice
-                            for stage in choice_stages
+                            for stage in choicestages
                             for choice in stage.choices
                         ]
 
@@ -390,77 +379,20 @@ class Board:
                             for choice in self._choicelist
                         }
 
-                        # No available choices
-                        if not self._choicedict:
-                            break
-
-                        message = "Choose!"
-                        movement = None
-
-                        # IO Loop
-                        while movement not in self._choicedict:
-                            movement = yield message
-                            message = "Invalid Choice!"
-
-                        selected = self._choicedict[movement]
-                        result = check_triggers(selected.choicestage.choose(selected))
-
-                        if isinstance(result, ChoiceStage):
-                            # The current procedure requires another movement.
-                            choicestages = [result]
-                            continue
-
-                        if isinstance(result, EventStage):
-                            self._execution_stack.insert(0, result)
-                            found_event = True
-                            break
-
-                    raise RuntimeError(
-                        "ChoiceStage.choose() must lead to another Stage."
-                    )
-
-                self._choicelist = []
-
-                # Search again before executing the newly declared event, allowing
-                # other effects to respond to it.
-                if found_event:
-                    continue
-
-                if self._execution_stack:
-                    self._state = EXECUTING
-                    stage = self._execution_stack[0]
-                    result = stage.execute()
-
-                    # Remove the stage that has just executed before refreshing.
-                    if self._execution_stack and self._execution_stack[0] is stage:
-                        self._execution_stack.pop(0)
-
-                    # Only EventStage execution is allowed to change the board.
-                    refresh_effects()
-                    live_effects = set(self._effectlist)
-
-                    self._execution_stack = [
-                        pending
-                        for pending in self._execution_stack
-                        if pending.effect in live_effects
-                    ]
-
-                    result = check_triggers(result)
-
-                    if isinstance(result, EventStage):
-                        if result.effect in live_effects:
-                            self._execution_stack.insert(0, result)
-
-                    elif isinstance(result, ChoiceStage):
-                        if result.effect in live_effects:
-                            continuation_choices = [result]
-
-                    elif result is not DONE and result is not INACTIVE:
-                        raise RuntimeError(
-                            f"Unexpected EventStage result: {result!r}"
-                        )
-
-                    continue
+                        message = "Select!"
+                        while True:
+                            player_input = yield message
+                            if player_input in self._choicedict:
+                                player_choice = self._choicedict[player_input]
+                                break
+                            else:
+                                message = "Wrong Selection!"
+                        
+                        next_stage = player_choice.choicestage.choose(player_choice)
+                        if isinstance(next_stage, PlayerMovement):
+                            pass
+                        elif isinstance(next_stage, ChoiceStage):
+                            
 
                 # No legal movement and no pending execution means defeat.
                 self._state = IDLE
