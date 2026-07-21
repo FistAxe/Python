@@ -47,6 +47,7 @@ class Effect:
 
     def __init__(self, source:GameObject) -> None:
         self._source = source
+        self._stage: Stage|None = None
 
     @property
     def source(self):
@@ -59,8 +60,14 @@ class Effect:
                 return True
         return False
     
-    def init(self) -> Stage|None:
-        return self._stagetypes[0](self)
+    def get_stage(self) -> Stage|None:
+        if self._stage:
+            return self._stage
+        else:
+            return self._stagetypes[0](self)
+        
+    def init(self):
+        self._stage = None
 
 class Stage:
     def __init__(self, effect:Effect, **kwargs) -> None:
@@ -70,7 +77,7 @@ class Stage:
     def effect(self):
         return self._effect
     
-    def _get_stage(self, index:int, **kwargs):
+    def _get_next_stage(self, index:int, **kwargs):
         return self.effect._stagetypes[index](self.effect, **kwargs)
 
 class TriggerStage(Stage):
@@ -100,9 +107,6 @@ class PlayerMovement(EventStage):
 class Rule(Effect):
     def __init__(self, source:Board) -> None:
         self._source = source
-        self._stages: list[Stage] = []
-        for st in self._stagetypes:
-            self._stages.append(st(self))
 
 @dataclass
 class Choice:
@@ -208,6 +212,8 @@ class Player(GameObject):
         super().__init__(board)
         self._name = playerinfo.name
 
+        self.turn_start: bool = False
+
     @property
     def name(self):
         return self._name
@@ -228,7 +234,7 @@ class Board:
     class TurnDrawRule(Rule):
         class TurnDrawTriggerStage(TriggerStage):
             def check(self):
-                return self._get_stage(1)
+                return self._get_next_stage(1)
         class TurnDrawChoiceStage(ChoiceStage):
             def __init__(self, effect: Effect) -> None:
                 super().__init__(effect)
@@ -343,6 +349,7 @@ class Board:
 
         # Turn Loop
         while True:
+            self.current_player.turn_start = True
             # Execution Loop
             while True:
                 confirmed_event = None
@@ -352,10 +359,17 @@ class Board:
                 choicestages: list[ChoiceStage] = []
                 while condition_changed:
                     condition_changed = False
-                    pending_event = self.execution_stack[0] if self.execution_stack else None
+                    if self.execution_stack:
+                        pending_event = self.execution_stack[0]
+                        loaded_effects: set[Effect] = set(eventstage.effect for eventstage in self.execution_stack)
+                    else:
+                        pending_event = None
+                        loaded_effects = set()
 
                     for effect in self.effectlist:
-                        new_effectstage = effect.init()
+                        if effect in loaded_effects:
+                            continue
+                        new_effectstage = effect.get_stage()
                         while isinstance(new_effectstage, TriggerStage):
                             new_effectstage = new_effectstage.check()
                         if isinstance(new_effectstage, EventStage):
@@ -429,11 +443,13 @@ class Board:
                         self._execution_stack.insert(0, next_stage)
                     elif isinstance(next_stage, ChoiceStage):
                         pass
+                    elif next_stage is DONE:
+                        confirmed_event.effect.init()
                     refresh_effects()
                     # Turn check
-                    # If turn change:
-                    #   self._current_player = self.opponent()
-                    #   break
+                    if True:
+                        self._current_player = self.opponent()
+                        break
                 
                 # No Choice, No Event -> Lose!
                 else:
