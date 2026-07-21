@@ -1,6 +1,6 @@
 from enum import Enum, auto
 from dataclasses import dataclass
-from typing import Literal, Generator
+from typing import Literal, Generator, Self
 
 class Keywords:
     pass
@@ -87,7 +87,7 @@ class ChoiceStage(Stage):
     def choices(self):
         return self._choices
 
-    def choose(self, choice:Choice) -> Stage|EffectState:
+    def choose(self, choice:Choice) -> Self|TriggerStage|EventStage|EffectState:
         return INACTIVE
 
 class EventStage(Stage):
@@ -338,66 +338,105 @@ class Board:
             )
             self._effectlist = effects
 
-        self._execution_stack = []
-        self._choicelist = []
-        choicestages: list[ChoiceStage] = []
+        # Game Start
         refresh_effects()
 
         # Turn Loop
         while True:
-            self._current_player = self.opponent()
-            self._state = IDLE
-
-            # Event Loop
+            # Execution Loop
             while True:
+                confirmed_event = None
 
-                # Search Loop
-                while True:
-                    executing_stage = self._execution_stack[0] if self._execution_stack else None
-                    choicestages = []
+                # Searching Loop
+                condition_changed: bool = True
+                choicestages: list[ChoiceStage] = []
+                while condition_changed:
+                    condition_changed = False
+                    pending_event = self.execution_stack[0] if self.execution_stack else None
 
-                    for effect in tuple(self._effectlist):
-                        result = effect.init() # Let effects themselve handle recursive activation
+                    for effect in self.effectlist:
+                        new_effectstage = effect.init()
+                        while isinstance(new_effectstage, TriggerStage):
+                            new_effectstage = new_effectstage.check()
+                        if isinstance(new_effectstage, EventStage):
+                            self._execution_stack.insert(0, new_effectstage)
+                            choicestages = []
+                            condition_changed = True
+                            break
+                        elif isinstance(new_effectstage, ChoiceStage):
+                            choicestages.append(new_effectstage)
+                            condition_changed = True
+                # pending_event, choicestages locked.
 
-                        if isinstance(result, EventStage):
-                            self._execution_stack.insert(0, result)
-                            continue
+                # Choice Loop, if choicestages exist.
+                if choicestages:
+                    message = "Choose!"
+                    multichoice: bool = False
 
-                        elif isinstance(result, ChoiceStage):
-                            choicestages.append(result)
+                    # Multichoice Loop
+                    while True:
+                        # Initial Choiceset
+                        if not multichoice:
+                            self._choicelist = [
+                                choice
+                                for choicestage in choicestages
+                                for choice in choicestage.choices
+                            ]
+                            self._choicedict = {
+                                (choice.click, choice.drop) : choice
+                                for choice in self._choicelist
+                            }
+                        # Get Input
+                        click_and_drop = yield message
+                        # Success
+                        if click_and_drop in self._choicedict:
+                            player_choice = self._choicedict[click_and_drop].choicestage
+                            next_stage = player_choice.choose(self._choicedict[click_and_drop])
+                            while isinstance(next_stage, TriggerStage):
+                                next_stage = next_stage.check()
+                            # Multichoice
+                            if player_choice is next_stage:
+                                multichoice = True
+                                self._choicelist = player_choice.choices
+                                self._choicedict = {(choice.click, choice.drop):choice for choice in self._choicelist}
+                                message = "Choose More!"
+                            # Movement
+                            elif isinstance(next_stage, PlayerMovement):
+                                confirmed_event = next_stage
+                                break
+                        # Fail and Multichoice
+                        elif multichoice:
+                            message = "Canceled! Choose Again."
+                            multichoice = False
+                        # Normal Fail
+                        else:
+                            message = "Wrong Choice! Choose Again."
+                
+                # Elif pending_event exists, make it valid_event.
+                elif pending_event and pending_event is self.execution_stack[0]:    # No Execution Yet; Assert execution_stack if pending_event exists.
+                    confirmed_event = pending_event
+                    pending_event = None
+                
+                # Execution!
+                if confirmed_event:
+                    self._choicelist, choicestages = []
+                    self._choicedict = {}
+                    next_stage = confirmed_event.execute()
+                    self._execution_stack.pop(0)
+                    while isinstance(next_stage, TriggerStage):
+                        next_stage = next_stage.check()
+                    if isinstance(next_stage, EventStage):
+                        self._execution_stack.insert(0, next_stage)
+                    elif isinstance(next_stage, ChoiceStage):
+                        pass
+                    refresh_effects()
+                    # Turn check
+                    # If turn change:
+                    #   self._current_player = self.opponent()
+                    #   break
+                
+                # No Choice, No Event -> Lose!
+                else:
+                    return End()
 
-                    if choicestages:
-                        break
 
-                    pass
-
-                # Choice!
-                self._choicelist = [
-                    choice
-                    for stage in choicestages
-                    for choice in stage.choices
-                    ]
-
-                self._choicedict = {
-                    (choice.click, choice.drop): choice
-                    for choice in self._choicelist
-                    }
-
-                message = "Select!"
-                while True:
-                    player_input = yield message
-                    if player_input in self._choicedict:
-                        player_choice = self._choicedict[player_input]
-                        break
-                    else:
-                        message = "Wrong Selection!"
-                    
-                next_stage = player_choice.choicestage.choose(player_choice)
-                if isinstance(next_stage, PlayerMovement):
-                    pass
-                elif isinstance(next_stage, ChoiceStage):
-                            
-
-                # No legal movement and no pending execution means defeat.
-                self._state = IDLE
-                return End()
