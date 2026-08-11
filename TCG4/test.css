@@ -1,0 +1,45 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    height: 100vh;
+}
+
+screen {
+    display: flex;
+    min-height: 100%;
+}
+
+board {
+    flex: 3;
+}
+
+info {
+    flex: 2;
+}
+
+.boardtable {
+    width: 100%;
+    height: 100%;
+    border-collapse: collapse;
+    background-color: rgb(247, 247, 237);
+}
+
+.boardtable td {
+    display: flex;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+.cell {
+    display: flex;
+    height: 19vh;
+    aspect-ratio: 3 / 4;
+    border: 1px solid black;
+    background-color: aquamarine;
+    align-items: center;
+    justify-content: center;
+}

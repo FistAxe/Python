@@ -6,17 +6,17 @@ class Keywords:
     pass
 
 class BoardState(Keywords, Enum):
-    IDLE = auto()
-    SELECT = auto()
+    """Searching (-> Searching) -> Executing"""
+    CHOOSING = auto()
     SEARCHING = auto()
     EXECUTING = auto()
     INIT = auto()
+    """Placeholder."""
 
-class EffectState(Keywords, Enum):
-    INACTIVE = auto()
-    READY = auto()
-    ACTIVE = auto()
-    DONE = auto()
+class EffectReturn(Keywords, Enum):
+    SILENT = auto()
+    FAILED = auto()
+    FINISH = auto()
 
 class ClickType(Keywords, Enum):
     CLICK = auto()
@@ -24,15 +24,15 @@ class ClickType(Keywords, Enum):
     CANCEL = auto()
     """A cancel message."""
 
-SELECT = BoardState.SELECT
+CHOOSING = BoardState.CHOOSING
 SEARCHING = BoardState.SEARCHING
 EXECUTING = BoardState.EXECUTING
 INIT = BoardState.INIT
-IDLE = BoardState.IDLE
-INACTIVE = EffectState.INACTIVE
-READY = EffectState.READY
-ACTIVE = EffectState.ACTIVE
-DONE = EffectState.DONE
+
+SILENT = EffectReturn.SILENT
+FAILED = EffectReturn.FAILED
+FINISH = EffectReturn.FINISH
+
 CLICK = ClickType.CLICK
 DROP = ClickType.DROP
 CANCEL = ClickType.CANCEL
@@ -53,20 +53,13 @@ class Effect:
     def source(self):
         return self._source
     
-    @property
-    def is_in_chain(self):
-        for stage in self.source.board.execution_stack:
-            if stage.effect is self:
-                return True
-        return False
-    
     def get_stage(self) -> Stage|None:
         if self._stage:
             return self._stage
         else:
             return self._stagetypes[0](self)
         
-    def init(self):
+    def refresh(self):
         self._stage = None
 
 class Stage:
@@ -84,8 +77,8 @@ class TriggerStage(Stage):
     def __init__(self, effect: Effect):
         super().__init__(effect)
 
-    def check(self) -> Stage|EffectState:
-        return INACTIVE
+    def check(self) -> Stage|Literal[EffectReturn.SILENT]:
+        return SILENT
 
 class ChoiceStage(Stage):
     _choices: list[Choice]
@@ -94,12 +87,12 @@ class ChoiceStage(Stage):
     def choices(self):
         return self._choices
 
-    def choose(self, choice:Choice) -> Self|TriggerStage|EventStage|EffectState:
-        return INACTIVE
+    def choose(self, choice:Choice) -> Self|TriggerStage|PlayerMovement:
+        raise NotImplementedError
 
 class EventStage(Stage):
-    def execute(self) -> Stage|EffectState:
-        return DONE
+    def execute(self) -> Stage|Literal[EffectReturn.FAILED, EffectReturn.FINISH]:
+        return FINISH
 
 class PlayerMovement(EventStage):
     pass
@@ -114,8 +107,9 @@ class Choice:
     click: GameObject
     drop: GameObject
 
+@dataclass
 class End:
-    pass
+    loser: Player
 
 class GameObject:
     def __init__(self, board:Board) -> None:
@@ -135,13 +129,31 @@ class Card(GameObject):
         super().__init__(board)
         self._player = player
         self._power: int|None = None
+        self._location: Pile|Row|InitiativeZone|None = None
+        self._revealed: bool = True
 
     @property
     def player(self):
         return self._player
 
+    @property
+    def location(self):
+        return self._location
+
+    @property
+    def revealed(self):
+        return self._revealed
+
     def get_power(self):
         return self._power if self._power else None
+
+    def flip(self, side:Literal["up", "down"]):
+        if side == "up":
+            self._revealed = True
+        elif side == "down":
+            self._revealed = False
+        else:
+            self._revealed = not self._revealed
 
 class Pile(GameObject):
     def __init__(self, board:Board) -> None:
@@ -151,6 +163,15 @@ class Pile(GameObject):
     @property
     def cards(self):
         return self._cards
+
+    def insert(self, card:Card, position:int|None=None):
+        if position:
+            self._cards.insert(position, card)
+        else:
+            self._cards.append(card)
+
+    def remove(self, card:Card):
+        self._cards.remove(card)
 
 class OwnedPile(Pile):
     def __init__(self, board: Board, player:Player) -> None:
@@ -170,6 +191,12 @@ class Row(GameObject):
     def cards(self):
         return self._cards
 
+    def insert(self, card:Card, position:int):
+        self._cards.insert(position, card)
+
+    def remove(self, card:Card):
+        self._cards.remove(card)
+
 class OwnedRow(Row):
     def __init__(self, board: Board, player:Player) -> None:
         super().__init__(board)
@@ -182,20 +209,36 @@ class OwnedRow(Row):
 class InitiativeZone(GameObject):
     def __init__(self, board: Board) -> None:
         super().__init__(board)
-        self._card: Card|None = None
+        self._cards: list[Card] = []
 
     @property
     def card(self):
-        return self._card
+        return self._cards[-1]
+
+    def owner(self):
+        if not self.card:
+            return None
+        else:
+            return self.card.player
+
+    def insert(self, card:Card, position:int|None=None):
+        if position:
+            self._cards.insert(position, card)
+        else:
+            self._cards.append(card)
+
+    def remove(self, card:Card):
+        self._cards.remove(card)
 
 class Deck(OwnedPile):
-    def init_add(self, card:Card):
+    def make_deck(self, card:Card):
         self._cards.append(card)
 
-class Hand(OwnedPile):
+class GraveYard(OwnedPile):
     pass
 
-class GraveYard(OwnedPile):
+
+class Hand(OwnedRow):
     pass
 
 class ChainRow(Row):        
@@ -252,7 +295,7 @@ class Board:
         ]
 
     def __init__(self, player1info:PlayerInfo, player2info:PlayerInfo):
-        self._state: Keywords = INIT
+        self._state: BoardState = INIT
         self._rules = [self.TurnDrawRule(self),]
         self._player1 = Player(self, player1info)
         self._player2 = Player(self, player2info)
@@ -279,9 +322,9 @@ class Board:
             self.drawrow[player] = DrawRow(self, player)
             
         for card in player1info.cardlist:
-            self.deck[self._player1].init_add(card(self, self._player1))
+            self.deck[self._player1].make_deck(card(self, self._player1))
         for card in player2info.cardlist:
-            self.deck[self._player2].init_add(card(self, self._player2))
+            self.deck[self._player2].make_deck(card(self, self._player2))
 
     @property
     def current_player(self):
@@ -293,7 +336,7 @@ class Board:
 
     @property
     def choicelist(self):
-        return self._choicelist if self._state is SELECT else None
+        return self._choicelist if self._state is CHOOSING else None
 
     @property
     def execution_stack(self):
@@ -334,8 +377,21 @@ class Board:
     def gameobjects(self):
         return self.locations() + self.cards()
 
+    def _move(self, card:Card, dest:Row|Pile|InitiativeZone, position:int|None=None):
+        org = card.location
+        if org:
+            org.remove(card)
+        if isinstance(dest, Row):
+            if position is not None:
+                dest.insert(card, position)
+            else:
+                raise RuntimeError  # Row needs position!
+        else:
+            dest.insert(card, position)
+        card._location = dest
+
     def _run(self) -> Generator[str | Keywords, tuple[GameObject, GameObject], End]:
-        def refresh_effects() -> None:
+        def refresh_effects():
             effects: list[Effect] = list(self._rulelist)
             effects.extend(
                 effect
@@ -352,11 +408,12 @@ class Board:
             self.current_player.turn_start = True
             # Execution Loop
             while True:
+                # Execution Init
                 confirmed_event = None
-
-                # Searching Loop
                 condition_changed: bool = True
                 choicestages: list[ChoiceStage] = []
+                self._state = SEARCHING
+                # Searching Loop
                 while condition_changed:
                     condition_changed = False
                     if self.execution_stack:
@@ -380,10 +437,11 @@ class Board:
                         elif isinstance(new_effectstage, ChoiceStage):
                             choicestages.append(new_effectstage)
                             condition_changed = True
-                # pending_event, choicestages locked.
+                # Both pending_event, choicestages locked.
 
                 # Choice Loop, if choicestages exist.
                 if choicestages:
+                    self._state = CHOOSING
                     message = "Choose!"
                     multichoice: bool = False
 
@@ -433,6 +491,7 @@ class Board:
                 
                 # Execution!
                 if confirmed_event:
+                    self._state = EXECUTING
                     self._choicelist, choicestages = []
                     self._choicedict = {}
                     next_stage = confirmed_event.execute()
@@ -443,16 +502,16 @@ class Board:
                         self._execution_stack.insert(0, next_stage)
                     elif isinstance(next_stage, ChoiceStage):
                         pass
-                    elif next_stage is DONE:
-                        confirmed_event.effect.init()
+                    elif next_stage is FINISH:
+                        confirmed_event.effect.refresh()
                     refresh_effects()
                     # Turn check
-                    if True:
+                    if not self.execution_stack and self.initiativezone.owner() is self.current_player:
                         self._current_player = self.opponent()
                         break
                 
                 # No Choice, No Event -> Lose!
                 else:
-                    return End()
+                    return End(loser=self.current_player)
 
 
