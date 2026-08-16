@@ -1,22 +1,19 @@
 class GameComponent {
     constructor(data = {}) {
         Object.assign(this, data)
-        this._uicomponent = null
+        this._element = null
     }
+}
 
-    makeUiComponent() {
-        if (this._uicomponent) {
-            delete this._uicomponent;
-        }
-        this._uicomponent = document.createElement('div');
-        return this.getUiComponent();
-    }
-
-    getUiComponent() {
-        if (this._uicomponent instanceof HTMLDivElement) {
-            return this._uicomponent;
+class StaticComponent extends GameComponent {
+    /**  @param {string} id */
+    constructor(id, data = {}) {
+        super(data);
+        elem = document.getElementById(id);
+        if (elem) {
+            this._element = elem;
         } else {
-            return null;
+            throw Error('StaticComponent element not pre-existing!');
         }
     }
 }
@@ -27,12 +24,23 @@ class Board {
         this.player2 = GameComponent();
         this.players = [this.player1, this.player2];
         
-        this.bottomrow = {};
-        this.upperrow = {};
+        this.bottomrow = StaticComponent("bottomrow1");
+        this.upperrow = StaticComponent("upperrow1");
         for (player in this.players) {
             this.bottomrow[this.player] = GameComponent();
             this.upperrow[this.player] = GameComponent();
             this.deck[this.player] = GameComponent();
         }
     }
+
+    init() {
+        this.boardElement = document.getElementById('board');
+    }
+
+    render() {
+        
+    }
 }
+
+board = new Board();
+board.init();

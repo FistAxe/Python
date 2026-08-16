@@ -3,32 +3,25 @@
     <head>
         <title>HTMLUI</title>
         <link rel="stylesheet" href="test.css">
+        <script src="test.js" defer></script>
     </head>
     <body>
-        <screen>
-            <board>
-                <table class="boardtable">
-                <tbody>
-                    <tr class="row" id="row1"></tr>
-                        <td><div class='cell'>1</div></td>
-                    <tr class="row" id="row2"></tr>
-                        <td><div class='cell'>1</div></td>
-                    <tr class="row" id="row3"></tr>
-                        <td><div class='cell'>1</div></td>
-                    <tr class="row" id="row4"></tr>
-                        <td><div class='cell'>1</div></td>
-                    <tr class="row" id="row5"></tr>
-                        <td><div class='cell'>1</div></td>
-                </tbody>
-                </table>
-            </board>
-            <info>
-                <p>Info.</p>
-            </info>
-        </screen>
+        <main id="game">
+            <section id="board">
+                <div class="hand" id="hand2">Enemy Hand</div>
+                <div class="zone deck" id="deck2">Enemy Deck</div>
+                <div class="row bottomrow" id="bottomrow2">Enemy BottomRow</div>
+                <div class="zone graveyard" id="graveyard2">Enemy Graveyard</div>
+                <div class="row upperrow" id="upperrow2">Enemy UpperRow</div>
+                <div class="zone centerzone" id="centerzone">Center Zone</div>
+                <div class="row middlerow" id="middlerow">Middle Row</div>
+                <div class="row upperrow" id="upperrow1">My UpperRow</div>
+                <div class="zone graveyard" id="graveyard1">My Graveyard</div>
+                <div class="row bottomrow" id="bottomrow1">My BottomRow</div>
+                <div class="zone deck" id="deck1">My Deck</div>
+                <div class="hand" id="hand1">My Hand</div>
+            </section>
+        </main>
     </body>
 </html>
 
-<script>
-
-</script>

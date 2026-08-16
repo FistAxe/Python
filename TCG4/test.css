@@ -2,44 +2,81 @@
     box-sizing: border-box;
 }
 
-body {
-    margin: 0;
-    height: 100vh;
+html, body, main {
+  width: 100%;
+  height: 100%;
+  margin: 0;
 }
 
-screen {
-    display: flex;
-    min-height: 100%;
+body, main {
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
-board {
-    flex: 3;
+#board {
+  background: lightgray;
+  height: 95%;
+  aspect-ratio: 7 / 5;
+  display: grid;
+  grid-template: repeat(7, 1fr) / repeat(7, 1fr);
+  row-gap: 1px;
 }
 
-info {
-    flex: 2;
+.row{
+    border: solid black;
+    align-content: center;
 }
 
-.boardtable {
-    width: 100%;
-    height: 100%;
-    border-collapse: collapse;
-    background-color: rgb(247, 247, 237);
+.zone {
+    border: solid 2px black;
+    align-content: center;
 }
 
-.boardtable td {
-    display: flex;
-    padding: 0;
-    align-items: center;
-    justify-content: center;
+#hand2 {
+    grid-area: 1 / 2 / auto / 7;
 }
 
-.cell {
-    display: flex;
-    height: 19vh;
-    aspect-ratio: 3 / 4;
-    border: 1px solid black;
-    background-color: aquamarine;
-    align-items: center;
-    justify-content: center;
+#bottomrow2 {
+    grid-area: 2 / 2 / auto / 7;
+}
+
+#deck2 {
+    grid-area: 2 / 1;
+}
+
+#upperrow2 {
+    grid-area: 3 / 2 / auto / 7;
+}
+
+#graveyard2 {
+    grid-area: 3 / 1;
+}
+
+#middlerow {
+    grid-area: 4 / 2 / auto / 7;
+}
+
+#centerzone {
+    grid-area: 4 / 4;
+}
+
+#upperrow1 {
+    grid-area: 5 / 2 / auto / 7;
+}
+
+#graveyard1 {
+    grid-area: 5 / 7;
+}
+
+#bottomrow1 {
+    grid-area: 6 / 2 / auto / 7;
+}
+
+#deck1 {
+    grid-area: 6 / 7;
+}
+
+#hand1 {
+    grid-area: 7 / 2 / auto / 7;
 }
